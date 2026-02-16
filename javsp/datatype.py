@@ -170,12 +170,36 @@ class Movie:
 
     def rename_files(self, use_hardlink: bool = False) -> None:
         """根据命名规则移动（重命名）影片文件"""
+        from javsp.config import Cfg
+        duplicate_handling = Cfg().summarizer.duplicate_handling
+
         def move_file(src:str, dst:str):
             """移动（重命名）文件并记录信息到日志"""
             abs_dst = os.path.abspath(dst)
-            # shutil.move might overwrite dst file
+            # 如果目标文件已存在，检查是否是同一个文件
             if os.path.exists(abs_dst):
-                raise FileExistsError(f'File exists: {abs_dst}')
+                try:
+                    # 检查是否是同一个文件（通过inode比较）
+                    if os.path.samefile(src, abs_dst):
+                        logger.info(f'源文件和目标文件相同，跳过移动操作: {abs_dst}')
+                        filemove_logger.info(f'文件相同，跳过移动: "{src}"')
+                        return
+                    else:
+                        # 不同的文件已存在，这是重复刮削的情况
+                        if duplicate_handling == 'skip':
+                            logger.info(f'检测到重复文件，根据配置跳过移动: {abs_dst}')
+                            filemove_logger.info(f'重复文件，跳过移动: "{src}" -> "{abs_dst}"')
+                            return
+                        elif duplicate_handling == 'overwrite':
+                            logger.info(f'检测到重复文件，根据配置覆盖: {abs_dst}')
+                            filemove_logger.info(f'覆盖重复文件: "{src}" -> "{abs_dst}"')
+                            # 继续执行移动操作，会覆盖现有文件
+                        # 没有else分支，因为现在只支持skip和overwrite
+                except OSError:
+                    # 如果无法比较文件（可能是跨文件系统），保守地跳过移动
+                    logger.warning(f'无法比较文件，跳过移动操作: {abs_dst}')
+                    filemove_logger.warning(f'无法比较文件，跳过移动: "{src}" -> "{abs_dst}"')
+                    return
             if (use_hardlink):
                 os.link(src, abs_dst)
             else:

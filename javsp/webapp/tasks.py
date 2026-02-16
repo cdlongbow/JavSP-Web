@@ -46,6 +46,7 @@ from javsp.config import Cfg
 from javsp.datatype import Movie
 from javsp.file import scan_movies
 from javsp.lib import resource_path
+from javsp.cookiecloud import sync_cookiecloud_cookies
 from .auth import get_current_user, UserInfo
 
 
@@ -57,6 +58,7 @@ class TaskStatus(str, Enum):
     pending = "PENDING"
     running = "RUNNING"
     succeeded = "SUCCEEDED"
+    skipped = "SKIPPED"
     failed = "FAILED"
 
 
@@ -213,7 +215,7 @@ def _task_worker():
                     task.message = "任务已在队列阶段被取消"
                     _tasks[task_id] = task
                 buf = _task_logs.setdefault(task_id, [])
-                line = f"[队列] 任务 #{task_id} 已取消"
+                line = f"[队列] 任务 #{format_task_id_display(task_id)} 已取消"
                 buf.append(line)
                 stream = _task_streams.get(task_id, "")
                 _task_streams[task_id] = stream + line + "\n"
@@ -348,6 +350,36 @@ _load_task_logs()
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+def format_task_id_display(task_id: str) -> str:
+    """将任务ID中的时间戳格式化为更可读的显示格式
+
+    例如：L3ZpZGVvL-aWsOW7uuaWh-S7tuWkuS9BQkYtMjQzLm1wNA_20251226_021831
+    转换为：L3ZpZGVvL-aWsOW7uuaWh-S7tuWkuS9BQkYtMjQzLm1wNA_2025/12/26 02:18:31
+    """
+    if '_' not in task_id:
+        return task_id
+
+    # 分割任务ID，提取时间戳部分
+    parts = task_id.rsplit('_', 2)  # 从右边分割最多2次，确保只分割时间戳部分
+    if len(parts) < 3:
+        return task_id
+
+    path_part = '_'.join(parts[:-2]) if len(parts) > 2 else parts[0]
+    date_str = parts[-2]
+    time_str = parts[-1]
+
+    # 检查日期和时间格式是否正确
+    if len(date_str) == 8 and len(time_str) == 6:
+        try:
+            # 格式化为 YYYY/MM/DD HH:MM:SS
+            formatted_timestamp = f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:8]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}"
+            return f"{path_part}_{date_str}_{time_str} ({formatted_timestamp})"
+        except (ValueError, IndexError):
+            pass
+
+    return task_id
 
 
 def _next_task_id(directory: str) -> str:
@@ -485,7 +517,7 @@ def _run_manual_task(task_id: str, directory: str) -> None:
 
             # 确保任务日志缓存存在，并写入一条起始日志，便于前端确认
             buf = _task_logs.setdefault(task_id, [])
-            line0 = f"任务 #{task_id} 已启动，目录：{directory}"
+            line0 = f"任务 #{format_task_id_display(task_id)} 已启动，目录：{directory}"
             buf.append(line0)
             # 同步写入原始流缓冲区，供 xterm.js 按 offset 增量读取
             stream0 = _task_streams.get(task_id, "")
@@ -1154,7 +1186,7 @@ def cancel_task(task_id: str, user: UserInfo = Depends(get_current_user)) -> Dic
             task.message = "任务已在队列阶段被取消"
             _tasks[task_id] = task
             buf = _task_logs.setdefault(task_id, [])
-            line = f"[队列] 收到取消请求，任务 #{task_id} 已从队列移除"
+            line = f"[队列] 收到取消请求，任务 #{format_task_id_display(task_id)} 已从队列移除"
             buf.append(line)
             stream = _task_streams.get(task_id, "")
             _task_streams[task_id] = stream + line + "\n"
@@ -1162,7 +1194,7 @@ def cancel_task(task_id: str, user: UserInfo = Depends(get_current_user)) -> Dic
 
         proc = _task_procs.get(task_id)
         # 记录一条停止请求日志
-        line = f"收到停止请求，正在尝试终止任务 #{task_id} ..."
+        line = f"收到停止请求，正在尝试终止任务 #{format_task_id_display(task_id)} ..."
         buf = _task_logs.setdefault(task_id, [])
         buf.append(line)
         stream = _task_streams.get(task_id, "")
@@ -1270,7 +1302,7 @@ def create_manual_task(
         # 入队并记录日志
         _pending_queue.append(task_id)
         buf = _task_logs.setdefault(task_id, [])
-        line = f"[队列] 任务 #{task_id} 已加入队列，等待执行"
+        line = f"[队列] 任务 #{format_task_id_display(task_id)} 已加入队列，等待执行"
         buf.append(line)
         stream0 = _task_streams.get(task_id, "")
         _task_streams[task_id] = stream0 + line + "\n"
@@ -1836,7 +1868,7 @@ def get_task_logs(
 
         # 优先使用标准化的结束标记判断任务最终状态（避免依赖自然语言关键词导致误判）
         status_value = task.status
-        # 查找标准化标记（优先）：格式为 "[TASK_RESULT] SUCCEEDED" 或 "[TASK_RESULT] FAILED"
+        # 查找标准化标记（优先）：格式为 "[TASK_RESULT] SUCCEEDED"、"[TASK_RESULT] FAILED" 或 "[TASK_RESULT] SKIPPED"
         explicit_result = None
         for ln in lines:
             if isinstance(ln, str) and ln.startswith("[TASK_RESULT]"):
@@ -1844,6 +1876,8 @@ def get_task_logs(
                     explicit_result = TaskStatus.succeeded
                 elif "FAILED" in ln:
                     explicit_result = TaskStatus.failed
+                elif "SKIPPED" in ln:
+                    explicit_result = TaskStatus.skipped
                 break
         if explicit_result is not None:
             status_value = explicit_result
@@ -2019,7 +2053,7 @@ def delete_task_logs(
                         continue
                     updated_history.append(item)
                 if changed:
-                    _history = updated_history
+                    _history[:] = updated_history
                     # 重写历史文件
                     try:
                         _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2050,6 +2084,53 @@ def delete_task_logs(
         return {"success": False, "error": str(e)}
 
 
+@router.delete("/logs", status_code=status.HTTP_200_OK)
+def delete_all_task_logs(
+    user: UserInfo = Depends(get_current_user),  # noqa: ARG001
+) -> Dict[str, Any]:
+    """删除全部任务的日志（内存和文件）。"""
+    log = logging.getLogger(__name__)
+    try:
+        with _task_lock:
+            task_ids = set(_task_logs.keys()) | set(_task_streams.keys()) | set(_tasks.keys())
+            _task_logs.clear()
+            _task_streams.clear()
+            _tasks.clear()
+
+        deleted_history = 0
+        with _history_lock:
+            deleted_history = len(_history)
+            _history.clear()
+            try:
+                _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with _HISTORY_FILE.open("w", encoding="utf-8") as f:
+                    f.write("")
+            except OSError as e:
+                log.warning("重写历史文件失败: %s", e)
+
+        deleted_files = 0
+        try:
+            if _TASK_LOGS_DIR.exists():
+                for log_file in _TASK_LOGS_DIR.glob("task_*.log"):
+                    try:
+                        log_file.unlink()
+                        deleted_files += 1
+                    except OSError as e:
+                        log.warning("删除任务日志文件失败: %s", e)
+        except OSError as e:
+            log.warning("清空任务日志目录失败: %s", e)
+
+        return {
+            "success": True,
+            "deleted_tasks": len(task_ids),
+            "deleted_files": deleted_files,
+            "deleted_history": deleted_history,
+        }
+    except Exception as e:  # noqa: BLE001
+        log.exception("清空全部任务日志失败")
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/fs/browse", response_model=List[FileEntry])
 def browse_files(
     path: str = Query("/video", description="要浏览的目录（容器内绝对路径）"),
@@ -2060,22 +2141,32 @@ def browse_files(
     - 仅允许访问以 /video 为前缀的路径，防止越权浏览宿主机其它目录；
     - 返回当前目录下的一层子项（不递归）。
     """
+    import logging
+    logger = logging.getLogger(__name__)
 
     if not os.path.isabs(path):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="必须提供绝对路径。")
 
     try:
         real = os.path.realpath(path)
-    except OSError:
+        logger.debug(f"FS browse: requested path='{path}', resolved to='{real}'")
+    except OSError as e:
+        logger.error(f"FS browse: failed to resolve path='{path}': {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="路径无效。")
 
     # 仅允许访问 /video 映射卷内的内容
     root_allowed = os.path.realpath("/video")
+    logger.debug(f"FS browse: root_allowed='{root_allowed}', checking if '{real}' starts with it")
     if not real.startswith(root_allowed):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="只能浏览 /video 目录下的内容。")
 
+    if not os.path.exists(real):
+        logger.error(f"FS browse: path does not exist: {path} -> {real}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"路径不存在: {path}")
+
     if not os.path.isdir(real):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="目标不是有效目录。")
+        logger.error(f"FS browse: path is not a directory: {path} -> {real}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"目标不是有效目录: {path}")
 
     entries: List[FileEntry] = []
     try:
@@ -2250,10 +2341,60 @@ def _enqueue_manual_task(directory: str, profile: str = "default", retry_count: 
         _task_streams.setdefault(task_id, "")
         _pending_queue.append(task_id)
         buf = _task_logs.setdefault(task_id, [])
-        line = f"[队列] 任务 #{task_id} 已加入队列，等待执行"
+        line = f"[队列] 任务 #{format_task_id_display(task_id)} 已加入队列，等待执行"
         buf.append(line)
         stream0 = _task_streams.get(task_id, "")
         _task_streams[task_id] = stream0 + line + "\n"
 
     _start_worker()
     return task_id
+
+
+# CookieCloud相关接口
+@router.post("/cookiecloud/sync", status_code=status.HTTP_200_OK)
+def sync_cookiecloud(
+    user: UserInfo = Depends(get_current_user),  # noqa: ARG001
+) -> Dict[str, Any]:
+    """强制同步CookieCloud的cookies"""
+    try:
+        # 强制同步并获取cookies
+        from javsp.cookiecloud import CookieCloudClient, Cfg
+
+        cfg = Cfg()
+        cookiecloud = cfg.network.cookiecloud
+
+        if not cookiecloud.enabled:
+            return {"status": "failed", "message": "CookieCloud未启用"}
+
+        if not cookiecloud.server_url or not cookiecloud.uuid or not cookiecloud.password:
+            return {"status": "failed", "message": "CookieCloud未完整配置（缺少server_url、uuid或password）"}
+
+        client = CookieCloudClient(
+            server_url=cookiecloud.server_url,
+            uuid=cookiecloud.uuid,
+            password=cookiecloud.password
+        )
+
+        # 清除缓存并重新获取
+        client.clear_cache()
+        cookies = client.get_cookies()
+
+        if cookies:
+            # 检查是否有特殊的错误信息
+            if isinstance(cookies, dict) and '__error__' in cookies:
+                error_info = cookies['__error__']
+                return {
+                    "status": "encryption_error",
+                    "message": error_info['message'],
+                    "error_type": error_info['type'],
+                    "solutions": error_info['solutions']
+                }
+            return {"status": "success", "message": f"CookieCloud cookies同步成功，获取到 {len(cookies)} 个域名的cookies"}
+        else:
+            return {"status": "failed", "message": "CookieCloud cookies同步失败，未获取到任何cookies"}
+    except Exception as e:
+        logger.error(f"同步CookieCloud cookies时出错: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"同步CookieCloud cookies失败: {str(e)}"
+        )

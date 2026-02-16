@@ -29,7 +29,14 @@ class MovieDuplicateError(CrawlerError):
 
 
 class SiteBlocked(CrawlerError):
-    """由于IP段或者触发反爬机制等原因导致用户被站点封锁"""
+    """由于IP段或者触发反爬机制等原因导致用户被站点封锁
+
+    可能的原因包括：
+    - Cloudflare IUAM (I'm Under Attack Mode)
+    - reCAPTCHA v2/v3 需要用户交互验证
+    - IP被封锁
+    - 请求频率过高
+    """
 
 
 class SitePermissionError(CrawlerError):

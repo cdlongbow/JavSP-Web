@@ -55,7 +55,34 @@ def parse_data(movie: MovieInfo):
     """解析指定番号的影片数据"""
     # airav也提供简体，但是为了尽量保持女优名等与其他站点一致，抓取繁体的数据
     url = f'{base_url}/api/video/barcode/{movie.dvdid}?lng=zh-TW'
-    resp = request.get(url).json()
+    movie.url = url  # 设置API URL
+
+    # 获取响应并检查HTTP状态码
+    resp_obj = request.get(url, delay_raise=True)
+    if resp_obj.status_code != 200:
+        # 使用通用错误检测器获取真实错误原因
+        real_reason = detect_real_error_reason(url, timeout=15)
+        from javsp.web.exceptions import SiteBlocked, WebsiteError
+
+        if "cloudflare" in real_reason.lower():
+            raise SiteBlocked(f"AirAV触发Cloudflare验证: {real_reason}")
+        elif "地理位置" in real_reason or "region" in real_reason.lower():
+            raise SiteBlocked(f"AirAV地理位置限制: {real_reason}")
+        elif "超时" in real_reason or "连接错误" in real_reason:
+            raise WebsiteError(f"AirAV网络连接问题: {real_reason}")
+        elif resp_obj.status_code >= 500:
+            raise WebsiteError(f"AirAV服务器错误: {real_reason}")
+        else:
+            raise SiteBlocked(f"AirAV访问被拒绝: {real_reason}")
+
+    # 尝试解析JSON，如果失败可能是HTML错误页面
+    try:
+        resp = resp_obj.json()
+    except ValueError:
+        # 如果不是有效的JSON，可能是错误页面
+        real_reason = detect_real_error_reason(url, timeout=15)
+        from javsp.web.exceptions import WebsiteError
+        raise WebsiteError(f"AirAV返回非预期的响应格式: {real_reason}")
     # 只在番号是纯数字时，尝试进行搜索，否则可能导致搜索到错误的影片信息
     if resp['count'] == 0 and re.match(r'\d{6}[-_]\d{2,3}', movie.dvdid):
         barcode = search_movie(movie.dvdid)

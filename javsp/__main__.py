@@ -88,6 +88,32 @@ def emit_event(kind: str, payload: Dict) -> None:
         logger.debug("emit_event failed", exc_info=True)
 
 
+def format_success_info(info: MovieInfo) -> str:
+    """格式化爬虫成功抓取到的信息，用于日志显示"""
+    details = []
+    if info.title:
+        # 限制标题长度，避免日志过长
+        title = info.title[:30] + "..." if len(info.title) > 30 else info.title
+        details.append(f"标题:{title}")
+    if info.actress:
+        actress_str = ",".join(info.actress) if isinstance(info.actress, list) else str(info.actress)
+        actress_str = actress_str[:20] + "..." if len(actress_str) > 20 else actress_str
+        details.append(f"女优:{actress_str}")
+    if info.publish_date:
+        details.append(f"日期:{info.publish_date}")
+    if info.producer:
+        producer = info.producer[:15] + "..." if len(info.producer) > 15 else info.producer
+        details.append(f"片商:{producer}")
+    if info.genre and len(info.genre) > 0:
+        genre_str = ",".join(info.genre[:3])  # 只显示前3个genre
+        genre_str = genre_str[:20] + "..." if len(genre_str) > 20 else genre_str
+        details.append(f"分类:{genre_str}")
+    if info.score:
+        details.append(f"评分:{info.score}")
+
+    return " | ".join(details) if details else "基本信息"
+
+
 def emit_movie_event(index: int, total: int, movie: Movie) -> None:
     """输出当前影片的结构化信息，用于在 Web 端建立影片进度行。"""
     try:
@@ -141,6 +167,24 @@ def import_crawlers():
 
 
 # 爬虫是IO密集型任务，可以通过多线程提升效率
+# 爬虫名称到网站域名的映射
+CRAWLER_SITES = {
+    'javbus': 'javbus.com',
+    'javdb': 'javdb.com',
+    'javlib': 'javlibrary.com',
+    'jav321': 'jav321.com',
+    'airav': 'airav.wiki',
+    'avsox': 'avsox.host',
+    'fanza': 'dmm.co.jp',
+    'mgstage': 'mgstage.com',
+    'fc2': 'fc2.com',
+    'njav': 'njav.tv',
+    'gyutto': 'gyutto.com',
+    'prestige': 'prestige-av.com',
+    'arzon': 'arzon.jp',
+    'arzon_iv': 'arzon.jp',
+}
+
 def parallel_crawler(movie: Movie, tqdm_bar=None):
     """使用多线程抓取不同网站的数据"""
     def wrapper(parser, info: MovieInfo, retry):
@@ -152,9 +196,15 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
         for cnt in range(retry):
             try:
                 parser(info)
-                # 成功后设置标记
+                # 成功后设置标记，并清除可能的错误信息
                 setattr(info, 'success', True)
-                logger.info(f'[{crawler_short_name}] 抓取成功')
+                if hasattr(info, 'crawler_error'):
+                    delattr(info, 'crawler_error')
+                success_details = format_success_info(info)
+                url_info = info.url if hasattr(info, 'url') and info.url else CRAWLER_SITES.get(crawler_short_name, 'unknown')
+                logger.info(f'[{crawler_short_name}] ({url_info}) 抓取成功 -> {success_details}')
+                if isinstance(tqdm_bar, tqdm):
+                    tqdm_bar.write(f'[{crawler_short_name}] ({url_info}) 抓取成功 -> {success_details}')
                 
                 # 成功时不更新描述，以免覆盖掉其他线程正在显示的错误信息，或者只显示简短的成功
                 # if isinstance(tqdm_bar, tqdm):
@@ -162,7 +212,10 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
                 break
             except MovieNotFoundError as e:
                 # 这种是正常业务流程，不是错误
-                logger.info(f'[{crawler_short_name}] 未找到影片: {e}')
+                url_info = info.url if hasattr(info, 'url') and info.url else CRAWLER_SITES.get(crawler_short_name, 'unknown')
+                logger.info(f'[{crawler_short_name}] ({url_info}) 未找到影片: {e}')
+                if isinstance(tqdm_bar, tqdm):
+                    tqdm_bar.write(f'[{crawler_short_name}] ({url_info}) 未找到影片')
                 last_error = f'未找到影片'
                 logger.debug(e)
                 break
@@ -172,11 +225,29 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
                 logger.debug(e)
                 break
             except (SiteBlocked, SitePermissionError, CredentialError) as e:
-                # 站点屏蔽/权限错误：更新进度条提示
-                logger.info(f'[{crawler_short_name}] 访问被拒/需登录: {e}')
-                last_error = f'访问被拒/需登录'
-                if isinstance(tqdm_bar, tqdm):
-                    tqdm_bar.set_description(f'{crawler_name}: 访问被拒/需登录')
+                # 站点屏蔽/权限错误：显示详细错误信息
+                url_info = info.url if hasattr(info, 'url') and info.url else CRAWLER_SITES.get(crawler_short_name, 'unknown')
+                # 对于SiteBlocked，显示完整的详细错误信息
+                if isinstance(e, SiteBlocked):
+                    error_msg = str(e)
+                    logger.info(f'[{crawler_short_name}] ({url_info}) {error_msg}')
+                    if isinstance(tqdm_bar, tqdm):
+                        tqdm_bar.write(f'[{crawler_short_name}] ({url_info}) {error_msg}')
+                    last_error = error_msg
+                    if isinstance(tqdm_bar, tqdm):
+                        # 截断过长的错误信息以适应进度条显示
+                        display_msg = error_msg
+                        if len(display_msg) > 40:
+                            display_msg = display_msg[:37] + '...'
+                        tqdm_bar.set_description(f'{crawler_name}: {display_msg}')
+                else:
+                    # 对于其他权限错误，使用通用消息
+                    logger.info(f'[{crawler_short_name}] ({url_info}) 访问被拒/需登录: {e}')
+                    if isinstance(tqdm_bar, tqdm):
+                        tqdm_bar.write(f'[{crawler_short_name}] ({url_info}) 访问被拒/需登录')
+                    last_error = f'访问被拒/需登录'
+                    if isinstance(tqdm_bar, tqdm):
+                        tqdm_bar.set_description(f'{crawler_name}: 访问被拒/需登录')
                 logger.debug(e)
                 break
             except requests.exceptions.RequestException as e:
@@ -190,7 +261,10 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
                     last_error = f'网络错误: {error_str.split("for url:")[0].strip()} for url: {url_part}'
                 else:
                     last_error = f'网络错误: {error_str}'
-                logger.info(f'[{crawler_short_name}] 网络错误 ({cnt+1}/{retry}): {e}')
+                url_info = info.url if hasattr(info, 'url') and info.url else CRAWLER_SITES.get(crawler_short_name, 'unknown')
+                logger.info(f'[{crawler_short_name}] ({url_info}) 网络错误 ({cnt+1}/{retry}): {e}')
+                if isinstance(tqdm_bar, tqdm):
+                    tqdm_bar.write(f'[{crawler_short_name}] ({url_info}) 网络错误 ({cnt+1}/{retry})')
                 if isinstance(tqdm_bar, tqdm):
                     tqdm_bar.set_description(f'{crawler_name}: 网络错误, 重试中 ({cnt+1}/{retry})')
                 logger.debug(f'{crawler_name}: 网络错误: {e}')
@@ -211,15 +285,20 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
                     last_error = err_msg
                 
                 # 日志中输出完整错误信息
-                logger.info(f'[{crawler_short_name}] 发生异常 ({cnt+1}/{retry}): {err_msg}')
-                
+                url_info = info.url if hasattr(info, 'url') and info.url else CRAWLER_SITES.get(crawler_short_name, 'unknown')
+                logger.info(f'[{crawler_short_name}] ({url_info}) 发生异常 ({cnt+1}/{retry}): {err_msg}')
+
+                # 在Web界面中显示错误信息
+                if isinstance(tqdm_bar, tqdm):
+                    tqdm_bar.write(f'[{crawler_short_name}] ({url_info}) 发生异常 ({cnt+1}/{retry})')
+
                 # 2. 更新进度条描述（使用简短版本）
                 if isinstance(tqdm_bar, tqdm):
                     display_msg = err_msg
                     if len(display_msg) > 30:
                         display_msg = display_msg[:27] + '...'
                     tqdm_bar.set_description(f'{crawler_name}: {display_msg} ({cnt+1}/{retry})')
-                
+
                 # 3. 详细堆栈只进 Debug 日志，不输出到控制台
                 logger.debug(f'{crawler_name}: 发生异常: {e}', exc_info=True)
                 # 注意：这里去掉了 logger.exception(e)，所以不会再刷屏 Traceback 了
@@ -227,7 +306,10 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
         # 如果所有重试都失败，记录最终错误
         if not hasattr(info, 'success') and last_error:
             setattr(info, 'crawler_error', last_error)
-            logger.warning(f'[{crawler_short_name}] 抓取失败: {last_error}')
+            url_info = info.url if hasattr(info, 'url') and info.url else CRAWLER_SITES.get(crawler_short_name, 'unknown')
+            logger.warning(f'[{crawler_short_name}] ({url_info}) 抓取失败: {last_error}')
+            if isinstance(tqdm_bar, tqdm):
+                tqdm_bar.write(f'[{crawler_short_name}] ({url_info}) 抓取失败: {last_error}')
 
     # 根据影片的数据源获取对应的抓取器
     crawler_mods: List[CrawlerID] = Cfg().crawler.selection[movie.data_src]
@@ -288,7 +370,8 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
         if hasattr(info, 'success'):
             if not hasattr(info, 'crawler_error'):
                 successful_crawlers.append(crawler_short_name)
-                logger.info(f'[{crawler_short_name}] 抓取成功')
+                success_details = format_success_info(info)
+                logger.info(f'[{crawler_short_name}] 抓取成功 -> {success_details}')
         else:
             error_msg = getattr(info, 'crawler_error', '未知错误')
             failed_crawlers.append(f'{crawler_short_name}({error_msg})')
@@ -297,8 +380,12 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
     # 输出所有爬虫的执行结果汇总
     if successful_crawlers:
         logger.info(f'成功抓取的爬虫 ({len(successful_crawlers)}/{len(attempted_crawlers)}): {", ".join(successful_crawlers)}')
+        if isinstance(tqdm_bar, tqdm):
+            tqdm_bar.write(f'成功抓取的爬虫 ({len(successful_crawlers)}/{len(attempted_crawlers)}): {", ".join(successful_crawlers)}')
     if failed_crawlers:
         logger.info(f'失败的爬虫 ({len(failed_crawlers)}/{len(attempted_crawlers)}): {", ".join([f"{c}" for c in failed_crawlers])}')
+        if isinstance(tqdm_bar, tqdm):
+            tqdm_bar.write(f'失败的爬虫 ({len(failed_crawlers)}/{len(attempted_crawlers)}): {", ".join([f"{c}" for c in failed_crawlers])}')
     
     # 删除抓取失败的站点对应的数据
     all_info = {k:v for k,v in all_info.items() if hasattr(v, 'success')}
@@ -768,7 +855,77 @@ def RunNormalMode(all_movies):
             })
             generate_names(movie)
             check_step(movie.save_dir, '无法按命名规则生成目标文件夹')
-            if not os.path.exists(movie.save_dir):
+
+            # 检查是否存在重名文件夹
+            if os.path.exists(movie.save_dir):
+                if os.path.isdir(movie.save_dir):
+                    duplicate_handling = Cfg().summarizer.duplicate_handling
+                    step_log(f"检测到重名文件夹 '{os.path.basename(movie.save_dir)}'，处理方式: {duplicate_handling}", step_index, total_step)
+                    if duplicate_handling == 'skip':
+                        step_log(f'根据配置跳过处理重复文件夹: {movie.save_dir}', step_index, total_step)
+                        # 设置标志表示跳过处理
+                        movie.skip_processing = True
+
+                        # 对于跳过的情况，我们仍然需要完成后续步骤，但标记为跳过
+                        # 跳过NFO、封面、剧照下载步骤
+                        step_index += 1  # 跳过NFO步骤
+                        emit_event('step', {
+                            'index': step_index,
+                            'total': total_step,
+                            'desc': '跳过NFO写入',
+                        })
+                        step_log("根据重复文件夹配置跳过NFO写入", step_index, total_step)
+
+                        step_index += 1  # 跳过封面下载步骤
+                        emit_event('step', {
+                            'index': step_index,
+                            'total': total_step,
+                            'desc': '跳过封面下载',
+                        })
+                        step_log("根据重复文件夹配置跳过封面下载", step_index, total_step)
+
+                        step_index += 1  # 跳过剧照下载步骤
+                        emit_event('step', {
+                            'index': step_index,
+                            'total': total_step,
+                            'desc': '跳过剧照下载',
+                        })
+                        step_log("根据重复文件夹配置跳过剧照下载", step_index, total_step)
+
+                        step_index += 1  # 跳过移动文件步骤
+                        emit_event('step', {
+                            'index': step_index,
+                            'total': total_step,
+                            'desc': '跳过移动文件',
+                        })
+                        step_log("根据重复文件夹配置跳过移动文件", step_index, total_step)
+
+                        # 显示跳过完成信息
+                        inner_bar.set_description(f'跳过处理: {movie.dvdid}')
+                        inner_bar.write(f'跳过处理重复文件夹，相关文件已存在: {movie.save_dir}')
+
+                        # 输出跳过结果摘要事件
+                        try:
+                            emit_event('task_result', {
+                                'status': 'skipped',
+                                'message': f'跳过处理重复文件夹: {movie.save_dir}',
+                                'save_dir': movie.save_dir,
+                                'files': movie.files
+                            })
+                        except Exception:
+                            pass
+
+                        # 输出标准化跳过标记
+                        print("[TASK_RESULT] SKIPPED")
+
+                        return
+                    elif duplicate_handling == 'overwrite':
+                        step_log(f'根据配置继续处理，将覆盖重复文件夹: {movie.save_dir}', step_index, total_step)
+                    # 没有else分支，因为现在只支持skip和overwrite
+                else:
+                    # 存在同名文件而不是文件夹，这是不正常的
+                    step_log(f'警告: 目标路径存在同名文件（非文件夹）: {movie.save_dir}', step_index, total_step)
+            else:
                 os.makedirs(movie.save_dir)
             try:
                 step_log(f"生成文件名 -> 目标目录: {movie.save_dir}", step_index, total_step)

@@ -41,6 +41,7 @@ def parse_data(movie: MovieInfo):
     gyutto_id = id_uc.replace('GYUTTO-', '')
     # 抓取网页
     url = f'{base_url}/i/item{gyutto_id}?select_uaflag=1'
+    movie.url = url
     r = request_get(url, delay_raise=True)
     if r.status_code == 404:
         raise MovieNotFoundError(__name__, movie.dvdid)

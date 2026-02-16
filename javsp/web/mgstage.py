@@ -19,11 +19,24 @@ request.cookies = {'adc': '1'}
 def parse_data(movie: MovieInfo):
     """解析指定番号的影片数据"""
     url = f'{base_url}/product/product_detail/{movie.dvdid}/'
+    movie.url = url
     resp = request.get(url, delay_raise=True)
-    if resp.status_code == 403:
-        raise SiteBlocked('mgstage不允许从当前IP所在地区访问，请尝试更换为日本地区代理')
-    # url不存在时会被重定向至主页。history非空时说明发生了重定向
-    elif resp.history:
+    if resp.status_code != 200:
+        # 使用通用错误检测器获取真实错误原因
+        real_reason = detect_real_error_reason(url, timeout=15)
+        from javsp.web.exceptions import SiteBlocked, WebsiteError
+
+        if "地理位置" in real_reason or "region" in real_reason.lower():
+            raise SiteBlocked(f"MGStage地理位置限制: {real_reason}")
+        elif "cloudflare" in real_reason.lower():
+            raise SiteBlocked(f"MGStage触发Cloudflare验证: {real_reason}")
+        elif resp.status_code >= 500:
+            raise WebsiteError(f"MGStage服务器错误: {real_reason}")
+        else:
+            raise SiteBlocked(f"MGStage访问被拒绝: {real_reason}")
+
+    if resp.history:
+        # url不存在时会被重定向至主页。history非空时说明发生了重定向
         raise MovieNotFoundError(__name__, movie.dvdid)
 
     html = resp2html(resp)

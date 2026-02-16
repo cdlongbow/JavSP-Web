@@ -70,6 +70,35 @@ services:
       - TZ=Asia/Shanghai
     ```
 
+## FlareSolverr 集成
+
+JavSP-Web 支持集成 [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) 来解决 Cloudflare 验证问题。
+
+### 设置步骤
+
+1. **安装 FlareSolverr**：
+   ```bash
+   docker run -d \
+     --name=flaresolverr \
+     -p 8191:8191 \
+     -e LOG_LEVEL=info \
+     --restart unless-stopped \
+     ghcr.io/flaresolverr/flaresolverr:latest
+   ```
+
+2. **在 JavSP-Web 中启用**：
+   - 进入 Web 界面 → 规则设置 → FlareSolverr 配置
+   - 启用 FlareSolverr
+   - 设置服务器地址（默认为 `http://localhost:8191`）
+   - 保存配置
+
+3. **使用效果**：
+   - 当遇到 Cloudflare 验证时，JavSP 会自动尝试使用 FlareSolverr 绕过
+   - 支持获取 cookies 和页面内容
+   - 失败时会回退到其他方法
+
+**注意**：FlareSolverr 需要与 JavSP 在同一 Docker 网络中，或通过正确的网络配置访问。
+
 ## 许可
 
 此项目的所有权利与许可受 GPL-3.0 License 与 [Anti 996 License](https://github.com/996icu/996.ICU/blob/master/LICENSE_CN) 共同限制。此外，如果你使用此项目，表明你还额外接受以下条款：

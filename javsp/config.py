@@ -59,13 +59,21 @@ class CookieCloud(BaseConfig):
     server_url: Optional[str] = None  # CookieCloud服务器地址，例如: http://localhost:8088
     uuid: Optional[str] = None  # CookieCloud的UUID
     password: Optional[str] = None  # CookieCloud的密码
+    sync_cron: Optional[str] = None  # Cron表达式，控制自动同步时间，例如: "0 */6 * * *" (每6小时同步一次)
+    sync_interval: NonNegativeInt = 3600  # 同步间隔(秒)，当未设置Cron时使用，默认1小时
+
+class FlareSolverr(BaseConfig):
+    """FlareSolverr配置，用于解决Cloudflare验证"""
+    enabled: bool = False
+    server_url: Url = "http://localhost:8191"  # FlareSolverr服务器地址，默认端口8191
 
 class Network(BaseConfig):
     proxy_server: Url | None
     retry: NonNegativeInt = 3
     timeout: Duration
     proxy_free: Dict[CrawlerID, Url]
-    cookiecloud: CookieCloud = CookieCloud()
+    cookiecloud: CookieCloud
+    flaresolverr: FlareSolverr = CookieCloud()
 
 class CrawlerSelect(BaseConfig):
     def items(self) -> List[tuple[str, list[CrawlerID]]]:
@@ -180,6 +188,7 @@ class Summarizer(BaseConfig):
     censor_options_representation: list[str]
     title: TitleSummarize
     move_files: bool = True
+    duplicate_handling: Literal['overwrite', 'skip'] = 'skip'
     path: PathSummarize
     nfo: NFOSummarize
     cover: CoverSummarize

@@ -42,6 +42,10 @@ def get_browsers_cookies():
         'Vivaldi':       '/Vivaldi/User Data'
     }
     LocalAppDataDir = os.getenv('LOCALAPPDATA')
+    # 在Docker容器中，LOCALAPPDATA可能为None
+    if LocalAppDataDir is None:
+        logger.debug("LOCALAPPDATA环境变量未设置，跳过浏览器Cookies获取")
+        return []
     all_browser_cookies = []
     exceptions = []
     for brw, path in user_data_dirs.items():

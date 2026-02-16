@@ -38,6 +38,7 @@ def parse_data(movie: MovieInfo):
     fc2_id = id_uc.replace('FC2-', '')
     # 抓取网页
     url = f'{base_url}/article/{fc2_id}/'
+    movie.url = url
     resp = request_get(url)
     if '/id.fc2.com/' in resp.url:
         raise SiteBlocked('FC2要求当前IP登录账号才可访问，请尝试更换为日本IP')

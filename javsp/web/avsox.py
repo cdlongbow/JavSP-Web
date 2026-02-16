@@ -17,13 +17,16 @@ def parse_data(movie: MovieInfo):
     full_id = movie.dvdid
     if full_id.startswith('FC2-'):
         full_id = full_id.replace('FC2-', 'FC2-PPV-')
-    html = get_html(f'{base_url}tw/search/{full_id}')
+    search_url = f'{base_url}tw/search/{full_id}'
+    movie.url = search_url  # 设置搜索URL
+    html = get_html(search_url)
     ids = html.xpath("//div[@class='photo-info']/span/date[1]/text()")
     urls = html.xpath("//a[contains(@class, 'movie-box')]/@href")
     ids_lower = list(map(str.lower, ids))
     if full_id.lower() in ids_lower:
         url = urls[ids_lower.index(full_id.lower())]
         url = url.replace('/tw/', '/cn/', 1)
+        movie.url = url  # 更新为实际的影片页面URL
     else:
         raise MovieNotFoundError(__name__, movie.dvdid, ids)
 

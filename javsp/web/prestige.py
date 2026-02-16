@@ -21,12 +21,25 @@ def parse_data(movie: MovieInfo):
         movie (MovieInfo): 要解析的影片信息，解析后的信息直接更新到此变量内
     """
     url = f'{base_url}/goods/goods_detail.php?sku={movie.dvdid}'
+    movie.url = url
     resp = request_get(url, cookies=cookies, delay_raise=True)
     if resp.status_code == 500:
         # 500错误表明prestige没有这部影片的数据，不是网络问题，因此不再重试
         raise MovieNotFoundError(__name__, movie.dvdid)
-    elif resp.status_code == 403:
-        raise SiteBlocked('prestige不允许从当前IP所在地区访问，请尝试更换为日本地区代理')
+    elif resp.status_code != 200:
+        # 使用通用错误检测器获取真实错误原因
+        real_reason = detect_real_error_reason(url, timeout=15)
+        from javsp.web.exceptions import SiteBlocked, WebsiteError
+
+        if "地理位置" in real_reason or "region" in real_reason.lower():
+            raise SiteBlocked(f"Prestige地理位置限制: {real_reason}")
+        elif "cloudflare" in real_reason.lower():
+            raise SiteBlocked(f"Prestige触发Cloudflare验证: {real_reason}")
+        elif resp.status_code >= 500:
+            raise WebsiteError(f"Prestige服务器错误: {real_reason}")
+        else:
+            raise SiteBlocked(f"Prestige访问被拒绝: {real_reason}")
+
     resp.raise_for_status()
     html = resp2html(resp)
     container_tags = html.xpath("//section[@class='px-4 mb-4 md:px-8 md:mb-16']")

@@ -85,6 +85,103 @@
       outline-offset: 2px;
     }
 
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .checkbox-grid label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background-color 0.1s ease;
+    }
+
+    .checkbox-grid label:hover {
+      background-color: #f3f4f6;
+    }
+
+    .checkbox-grid input[type="checkbox"] {
+      margin: 0;
+      width: 14px;
+      height: 14px;
+    }
+
+    .dropdown-container {
+      position: relative;
+      width: 100%;
+    }
+
+    .dropdown-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #374151;
+      background-color: #ffffff;
+      cursor: pointer;
+      transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    }
+
+    .dropdown-input::placeholder {
+      color: #9ca3af;
+    }
+
+    .dropdown-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .dropdown-input:focus + .dropdown-menu,
+    .dropdown-menu.show {
+      display: block;
+    }
+
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background-color: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+      color: #374151;
+      cursor: pointer;
+      transition: background-color 0.1s ease;
+    }
+
+    .dropdown-item:hover {
+      background-color: #f3f4f6;
+      color: #111827;
+    }
+
+    .dropdown-item input[type="checkbox"] {
+      margin: 0;
+      width: 14px;
+      height: 14px;
+    }
+
     .field.inline-edit { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .field.inline-edit label { margin-bottom: 0; }
     .ghost-btn { border-radius: 999px; border: 1px solid #374151; padding: 4px 9px; background: transparent; color: #9ca3af; font-size: 11px; cursor: pointer; white-space: nowrap; }
@@ -496,6 +593,7 @@
                 <span id="manual-page-info" style="font-size:12px;color:#9ca3af;">第 1 页</span>
                 <button class="ghost-btn" id="manual-next-page" style="font-size:11px;" disabled>下一页</button>
               </div>
+              <button class="ghost-btn" id="manual-log-clear-all" style="font-size:11px;">清空日志</button>
             </div>
           </div>
           <!-- 任务日志筛选控件 -->
@@ -507,6 +605,7 @@
                 <option value="PENDING">队列中</option>
                 <option value="RUNNING">进行中</option>
                 <option value="SUCCEEDED">完成</option>
+                <option value="SKIPPED">跳过</option>
                 <option value="FAILED">失败</option>
               </select>
             </div>
@@ -648,7 +747,11 @@
                 <div class="grid-two">
                   <div class="field">
                     <label for="rules-network-proxy">代理服务器地址</label>
-                    <input id="rules-network-proxy" placeholder="例如 http://127.0.0.1:1080，留空表示不使用代理" />
+                    <input id="rules-network-proxy" placeholder="例如 http://127.0.0.1:1080 或容器环境使用 http://host.docker.internal:1080，留空表示不使用代理" />
+                  </div>
+                  <div class="field checkbox-inline">
+                    <label for="rules-network-proxy-enabled">启用代理</label>
+                    <input type="checkbox" id="rules-network-proxy-enabled" />
                   </div>
                   <div class="field">
                     <label for="rules-network-retry">网络重试次数</label>
@@ -657,6 +760,13 @@
                   <div class="field">
                     <label for="rules-network-timeout">网络超时时间（timeout）</label>
                     <input id="rules-network-timeout" placeholder="例如 PT10S" />
+                  </div>
+                  <div class="field">
+                    <label>连通性测试</label>
+                    <button class="primary-btn" id="rules-network-connectivity-test" type="button">测试站点连通性</button>
+                    <div style="margin-top: 4px; font-size: 11px; color: #6b7280;">
+                      测试当前网络配置下的站点可访问性
+                    </div>
                   </div>
                 </div>
               </div>
@@ -676,8 +786,13 @@
                 <div class="rules-card-title">爬虫设置</div>
                 <div class="grid-two">
                   <div class="field">
-                    <label for="rules-crawler-required-keys">必需字段</label>
-                    <input id="rules-crawler-required-keys" placeholder="逗号分隔，例如 cover,title" />
+                    <label>必需字段</label>
+                    <div class="dropdown-container">
+                      <input type="text" id="rules-crawler-required-keys-input" class="dropdown-input" readonly placeholder="点击选择必需字段">
+                      <div id="rules-crawler-required-keys-dropdown" class="dropdown-menu">
+                        <!-- 下拉选项将通过JavaScript动态生成 -->
+                      </div>
+                    </div>
                   </div>
                   <div class="field checkbox-inline">
                     <label for="rules-crawler-hardworking">更努力爬取</label>
@@ -851,6 +966,13 @@
                   <div class="field checkbox-inline">
                     <label for="rules-summarizer-move-files">整理时移动文件</label>
                     <input type="checkbox" id="rules-summarizer-move-files" />
+                  </div>
+                  <div class="field">
+                    <label for="rules-summarizer-duplicate-handling">重复文件处理</label>
+                    <select id="rules-summarizer-duplicate-handling">
+                      <option value="skip">跳过（默认）</option>
+                      <option value="overwrite">覆盖</option>
+                    </select>
                   </div>
                   <div class="field">
                     <label for="rules-path-output">整理输出路径模板</label>
@@ -1103,6 +1225,7 @@
             <select id="history-filter-status" style="padding:4px 8px;border-radius:6px;border:1px solid #374151;background:#020617;color:#e5e7eb;font-size:12px;min-width:120px;">
               <option value="">全部</option>
               <option value="SUCCEEDED">成功</option>
+              <option value="SKIPPED">跳过</option>
               <option value="FAILED">失败</option>
             </select>
           </div>
@@ -1148,9 +1271,42 @@
               <input id="rules-cookiecloud-password" type="password" placeholder="CookieCloud 的密码" />
             </div>
           </div>
+          <div class="grid-two" style="margin-top: 8px;">
+            <div class="field">
+              <label for="rules-cookiecloud-sync-cron">自动同步 Cron 表达式</label>
+              <input id="rules-cookiecloud-sync-cron" placeholder="例如 0 */6 * * * (每6小时)" />
+              <small style="color:#6b7280;font-size:11px;">留空则使用间隔时间同步</small>
+            </div>
+            <div class="field">
+              <label for="rules-cookiecloud-sync-interval">同步间隔 (秒)</label>
+              <input id="rules-cookiecloud-sync-interval" type="number" placeholder="3600" min="300" />
+              <small style="color:#6b7280;font-size:11px;">当未设置Cron时使用，默认3600秒</small>
+            </div>
+          </div>
           <div style="margin-top: 10px; display:flex; align-items:center; gap:8px;">
             <button class="primary-btn" id="cookiecloud-save">保存 CookieCloud 配置</button>
+            <button class="secondary-btn" id="cookiecloud-sync-now">立即同步</button>
             <span id="cookiecloud-status" class="placeholder"></span>
+          </div>
+        </div>
+
+        <div class="rules-card">
+          <div class="rules-card-title">FlareSolverr 配置</div>
+          <div class="grid-two">
+            <div class="field checkbox-inline">
+              <label for="rules-flaresolverr-enabled">启用 FlareSolverr</label>
+              <input type="checkbox" id="rules-flaresolverr-enabled" />
+              <small style="color:#6b7280;font-size:11px;">用于解决Cloudflare验证的开源工具</small>
+            </div>
+            <div class="field">
+              <label for="rules-flaresolverr-server-url">FlareSolverr 服务器地址</label>
+              <input id="rules-flaresolverr-server-url" placeholder="http://localhost:8191" />
+              <small style="color:#6b7280;font-size:11px;">FlareSolverr服务的地址，默认端口8191</small>
+            </div>
+          </div>
+          <div style="margin-top: 10px;">
+            <button class="primary-btn" id="flaresolverr-save">保存 FlareSolverr 配置</button>
+            <span id="flaresolverr-status" class="placeholder"></span>
           </div>
         </div>
       </section>
@@ -1366,6 +1522,26 @@
           { text: '确定', primary: true, result: true }
         ]);
       };
+
+      function generateConnectivityTestResult(result) {
+        let content = '<div style="font-family:monospace;font-size:12px;">';
+        for (const [site, status] of Object.entries(result)) {
+          const statusColor = status.success ? '#10b981' : '#ef4444';
+          const statusText = status.success ? '✓ 正常' : '✗ 失败';
+          let errorText = '';
+
+          if (status.error) {
+            errorText = ` (${status.error})`;
+          } else if (status.status_code) {
+            errorText = ` (${status.status_code})`;
+          }
+
+          content += `<div style="margin:4px 0;"><span style="color:${statusColor};">${statusText}</span> ${site}${errorText}</div>`;
+        }
+        content += '<div style="margin-top:12px;font-size:11px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:8px;">提示：如果站点连接失败，可能需要配置代理服务器</div>';
+        content += '</div>';
+        return content;
+      }
       
       // 轻量气泡提示（非模态），自动消失
       window.showToast = function(message, duration = 2200) {
@@ -1506,8 +1682,12 @@
           const data = await response.json();
           if (data.success) {
             allTaskLogs.delete(taskId);
-            const taskGroup = document.querySelector(`.log-task-group[data-task-id="${String(taskId).replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"]`);
-            if (taskGroup) taskGroup.remove();
+            try {
+              const domId = String(taskId).replace(/[^a-zA-Z0-9]/g, '_');
+              const body = document.getElementById('task-log-' + domId);
+              const group = body ? body.closest('.log-task-group') : null;
+              if (group) group.remove();
+            } catch (e) {}
             if (allTaskLogs.size === 0) {
               if (manualLogContainer) manualLogContainer.innerHTML = '<div class="placeholder">暂无日志</div>';
             } else {
@@ -1622,10 +1802,12 @@
             // 从内存中移除任务日志
             allTaskLogs.delete(taskId);
             // 从DOM中移除对应的log-task-group元素
-            const taskGroup = document.querySelector(`.log-task-group[data-task-id="${String(taskId).replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"]`);
-            if (taskGroup) {
-              taskGroup.remove();
-            }
+            try {
+              const domId = String(taskId).replace(/[^a-zA-Z0-9]/g, '_');
+              const body = document.getElementById('task-log-' + domId);
+              const group = body ? body.closest('.log-task-group') : null;
+              if (group) group.remove();
+            } catch (e) {}
             // 重新渲染日志列表（如果没有其他任务，显示占位符）
             if (allTaskLogs.size === 0) {
               if (manualLogContainer) {
@@ -1687,14 +1869,82 @@
 
       // network & crawler
       const rulesNetworkProxy = document.getElementById('rules-network-proxy');
+      const rulesNetworkProxyEnabled = document.getElementById('rules-network-proxy-enabled');
       const rulesNetworkRetry = document.getElementById('rules-network-retry');
       const rulesNetworkTimeout = document.getElementById('rules-network-timeout');
+      const rulesNetworkConnectivityTest = document.getElementById('rules-network-connectivity-test');
+
+      // 必需字段映射：英文 -> 中文
+      const requiredFieldsMap = {
+        'title': '标题',
+        'cover': '封面',
+        'actress': '女优',
+        'genre': '分类',
+        'duration': '时长',
+        'publish_date': '发布日期',
+        'producer': '制作商',
+        'publisher': '发行商',
+        'director': '导演',
+        'plot': '故事情节',
+        'score': '评分',
+        'preview_pics': '预览图片',
+        'serial': '系列',
+        'uncensored': '无码标识'
+      };
+
+      // 初始化全局规则的必需字段下拉菜单
+      const globalRequiredKeysInput = document.getElementById('rules-crawler-required-keys-input');
+      const globalRequiredKeysDropdown = document.getElementById('rules-crawler-required-keys-dropdown');
+      if (globalRequiredKeysInput && globalRequiredKeysDropdown) {
+        generateRequiredFieldsDropdown(globalRequiredKeysDropdown, []);
+
+        // 点击输入框显示/隐藏下拉菜单
+        globalRequiredKeysInput.addEventListener('click', function() {
+          globalRequiredKeysDropdown.classList.toggle('show');
+        });
+
+        // 点击其他地方隐藏下拉菜单
+        document.addEventListener('click', function(e) {
+          if (!globalRequiredKeysInput.contains(e.target) && !globalRequiredKeysDropdown.contains(e.target)) {
+            globalRequiredKeysDropdown.classList.remove('show');
+          }
+        });
+
+        // 复选框状态改变时更新输入框显示
+        globalRequiredKeysDropdown.addEventListener('change', function(e) {
+          if (e.target.type === 'checkbox') {
+            const selectedFields = getSelectedRequiredFields(globalRequiredKeysDropdown);
+            updateRequiredFieldsInput(globalRequiredKeysInput, globalRequiredKeysDropdown, selectedFields);
+          }
+        });
+      }
+
+      // 代理开关状态变化处理
+      if (rulesNetworkProxyEnabled && rulesNetworkProxy) {
+        function updateProxyInputState() {
+          const enabled = rulesNetworkProxyEnabled.checked;
+          rulesNetworkProxy.disabled = !enabled;
+          rulesNetworkProxy.style.opacity = enabled ? '1' : '0.5';
+        }
+
+        rulesNetworkProxyEnabled.addEventListener('change', updateProxyInputState);
+        updateProxyInputState(); // 初始化状态
+      }
       const rulesCookieCloudEnabled = document.getElementById('rules-cookiecloud-enabled');
       const rulesCookieCloudServerUrl = document.getElementById('rules-cookiecloud-server-url');
       const rulesCookieCloudUuid = document.getElementById('rules-cookiecloud-uuid');
       const rulesCookieCloudPassword = document.getElementById('rules-cookiecloud-password');
+      const rulesCookieCloudSyncCron = document.getElementById('rules-cookiecloud-sync-cron');
+      const rulesCookieCloudSyncInterval = document.getElementById('rules-cookiecloud-sync-interval');
       const cookiecloudSaveBtn = document.getElementById('cookiecloud-save');
+      const cookiecloudSyncNowBtn = document.getElementById('cookiecloud-sync-now');
       const cookiecloudStatus = document.getElementById('cookiecloud-status');
+
+      // FlareSolverr配置元素
+      const rulesFlareSolverrEnabled = document.getElementById('rules-flaresolverr-enabled');
+      const rulesFlareSolverrServerUrl = document.getElementById('rules-flaresolverr-server-url');
+      const flaresolverrSaveBtn = document.getElementById('flaresolverr-save');
+      const flaresolverrStatus = document.getElementById('flaresolverr-status');
       const proxyfreeModal = document.getElementById('proxyfree-modal');
       const proxyfreeOpenBtn = document.getElementById('rules-proxyfree-open');
       const proxyfreeCancelBtn = document.getElementById('proxyfree-cancel');
@@ -1703,7 +1953,6 @@
       const rulesProxyFreeJavdb = document.getElementById('rules-proxyfree-javdb');
       const rulesProxyFreeJavlib = document.getElementById('rules-proxyfree-javlib');
       const rulesProxyFreeAvsox = document.getElementById('rules-proxyfree-avsox');
-      const rulesCrawlerRequiredKeys = document.getElementById('rules-crawler-required-keys');
       const rulesCrawlerHardworking = document.getElementById('rules-crawler-hardworking');
       const rulesCrawlerRespectId = document.getElementById('rules-crawler-respect-id');
       const rulesCrawlerUseJavdbCover = document.getElementById('rules-crawler-use-javdb-cover');
@@ -1723,6 +1972,7 @@
 
       // summarizer.path & defaults & nfo & cover
       const rulesSummarizerMoveFiles = document.getElementById('rules-summarizer-move-files');
+      const rulesSummarizerDuplicateHandling = document.getElementById('rules-summarizer-duplicate-handling');
       const rulesPathOutput = document.getElementById('rules-path-output');
       const rulesPathBasename = document.getElementById('rules-path-basename');
       const rulesPathLengthMax = document.getElementById('rules-path-length-max');
@@ -1983,7 +2233,17 @@
         } catch (err) {
           if (videodeHint) {
             videodeHint.style.color = '#fca5a5';
-            videodeHint.textContent = '加载目录失败，请检查 /video 是否已挂载。';
+            // 检查是否是路径不存在的错误
+            if (err && err.status === 400 && err.detail && err.detail.includes('路径不存在')) {
+              videodeHint.textContent = '目录不存在，已自动返回上级目录。';
+              // 自动返回上级目录
+              setTimeout(() => {
+                const parentPath = videodeCurrentPath.split('/').slice(0, -1).join('/') || '/video';
+                loadVideode(parentPath);
+              }, 1500); // 1.5秒后自动返回
+            } else {
+              videodeHint.textContent = '加载目录失败，请检查 /video 是否已挂载。';
+            }
           }
         }
       }
@@ -2035,7 +2295,7 @@
             const cleanId = String(id).replace(/:\d+$/, '');
             const t = await fetchJSON('/api/tasks/' + encodeURIComponent(cleanId));
             const s = t.status || 'UNKNOWN';
-            if (s === 'SUCCEEDED' || s === 'FAILED') {
+            if (s === 'SUCCEEDED' || s === 'FAILED' || s === 'SKIPPED') {
               return s;
             }
           } catch (e) {
@@ -2216,6 +2476,13 @@
           if (rulesCookieCloudServerUrl) rulesCookieCloudServerUrl.value = cookiecloud.server_url || '';
           if (rulesCookieCloudUuid) rulesCookieCloudUuid.value = cookiecloud.uuid || '';
           if (rulesCookieCloudPassword) rulesCookieCloudPassword.value = cookiecloud.password || '';
+          if (rulesCookieCloudSyncCron) rulesCookieCloudSyncCron.value = cookiecloud.sync_cron || '';
+          if (rulesCookieCloudSyncInterval) rulesCookieCloudSyncInterval.value = cookiecloud.sync_interval || 3600;
+
+          // FlareSolverr配置初始化
+          const flaresolverr = network.flaresolverr || {};
+          if (rulesFlareSolverrEnabled) rulesFlareSolverrEnabled.checked = flaresolverr.enabled || false;
+          if (rulesFlareSolverrServerUrl) rulesFlareSolverrServerUrl.value = flaresolverr.server_url || 'http://localhost:8191';
           proxyfreeSnapshot = {
             javbus: rulesProxyFreeJavbus ? rulesProxyFreeJavbus.value : '',
             javdb: rulesProxyFreeJavdb ? rulesProxyFreeJavdb.value : '',
@@ -2223,8 +2490,9 @@
             avsox: rulesProxyFreeAvsox ? rulesProxyFreeAvsox.value : ''
           };
 
-          if (rulesCrawlerRequiredKeys && Array.isArray(crawler.required_keys)) {
-            rulesCrawlerRequiredKeys.value = crawler.required_keys.join(',');
+          if (globalRequiredKeysInput && globalRequiredKeysDropdown && Array.isArray(crawler.required_keys)) {
+            generateRequiredFieldsDropdown(globalRequiredKeysDropdown, crawler.required_keys);
+            updateRequiredFieldsInput(globalRequiredKeysInput, globalRequiredKeysDropdown, crawler.required_keys);
           }
           if (rulesCrawlerHardworking) {
             rulesCrawlerHardworking.checked = !!crawler.hardworking;
@@ -2255,6 +2523,7 @@
 
           if (rulesSummarizerMoveFiles) {
             rulesSummarizerMoveFiles.checked = !!summarizer.move_files;
+            rulesSummarizerDuplicateHandling.value = summarizer.duplicate_handling || 'skip';
           }
           if (rulesPathOutput && pathCfg.output_folder_pattern != null) {
             rulesPathOutput.value = pathCfg.output_folder_pattern;
@@ -2527,7 +2796,7 @@
           return timeB - timeA;
         });
         
-        // 如果按状态筛选（SUCCEEDED/FAILED），补充每项的任务状态并再次过滤
+        // 如果按状态筛选（SUCCEEDED/FAILED/SKIPPED），补充每项的任务状态并再次过滤
         if (historyFilters.status && historyFilters.status !== '') {
           const statusMap = {};
           await Promise.all(historyFilteredItems.map(async it => {
@@ -2602,7 +2871,7 @@
               try {
                 const t = await fetchJSON('/api/tasks/' + encodeURIComponent(item.task_id));
                 taskStatus = t && t.status ? t.status : '';
-                if (taskStatus === 'SUCCEEDED') {
+                if (taskStatus === 'SUCCEEDED' || taskStatus === 'SKIPPED') {
                   statusBadge = '<span style="color:#22c55e;font-weight:600;margin-left:8px;">已成功</span>';
                 } else if (taskStatus === 'FAILED') {
                   statusBadge = '<span style="color:#ef4444;font-weight:600;margin-left:8px;">刮削失败</span>';
@@ -3313,6 +3582,13 @@
               });
             } catch (err) {
               console.error('加载目录失败', err);
+              // 检查是否是路径不存在的错误，自动返回上级目录
+              if (err && err.status === 400 && err.detail && err.detail.includes('路径不存在')) {
+                setTimeout(() => {
+                  const parentPath = modalVideodeCurrentPath.split('/').slice(0, -1).join('/') || '/video';
+                  loadModalVideode(parentPath);
+                }, 1000); // 1秒后自动返回
+              }
             }
           }
 
@@ -3680,6 +3956,7 @@
       const manualLogFilterPath = document.getElementById('manual-log-filter-path');
       const manualLogFilterApply = document.getElementById('manual-log-filter-apply');
       const manualLogFilterClear = document.getElementById('manual-log-filter-clear');
+      const manualLogClearAllBtn = document.getElementById('manual-log-clear-all');
       
       // 更新任务日志路径下拉框
       function updateManualLogPathFilter() {
@@ -3792,8 +4069,8 @@
               taskTimeFormatted = formatTaskId(taskId);
             }
             const status = taskData.status || 'RUNNING';
-            const statusColor = status === 'SUCCEEDED' ? '#22c55e' : status === 'FAILED' ? '#ef4444' : status === 'PENDING' ? '#f59e0b' : '#3b82f6';
-            const statusText = status === 'SUCCEEDED' ? '完成' : status === 'FAILED' ? '失败' : status === 'PENDING' ? '队列中' : '进行中';
+            const statusColor = status === 'SUCCEEDED' ? '#22c55e' : status === 'FAILED' ? '#ef4444' : status === 'SKIPPED' ? '#8b5cf6' : status === 'PENDING' ? '#f59e0b' : '#3b82f6';
+            const statusText = status === 'SUCCEEDED' ? '完成' : status === 'FAILED' ? '失败' : status === 'SKIPPED' ? '跳过' : status === 'PENDING' ? '队列中' : '进行中';
             const isTaskExpanded = expandedTasks.has(String(taskId));
             const safeTaskId = String(taskId).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
@@ -3806,7 +4083,7 @@
               stepsHtml = `<div style="font-size:10px;color:#9ca3af;margin-top:4px;">${stepsList}</div>`;
             }
 
-            const showCancel = status !== 'SUCCEEDED' && status !== 'FAILED';
+            const showCancel = status !== 'SUCCEEDED' && status !== 'FAILED' && status !== 'SKIPPED';
             html.push(`
               <div class="log-task-group" data-task-id="${safeTaskId}" style="border:1px solid #1f2937;border-radius:8px;margin-bottom:8px;overflow:hidden;background:#020617;">
                 <div class="log-task-header" style="padding:10px 12px;background:#111827;display:flex;justify-content:space-between;align-items:center;">
@@ -3822,7 +4099,7 @@
                     <button class="delete-task-log-btn" data-task-id="${safeTaskId}" style="border-radius:999px;border:1px solid #374151;padding:2px 8px;background:transparent;color:#ef4444;font-size:10px;cursor:pointer;" onclick="event.stopPropagation();showDeleteBubble(this,'${safeTaskId}')">删除日志</button>
                   </div>
                 </div>
-                <div class="log-task-body" id="task-log-${safeTaskId.replace(/[^a-zA-Z0-9]/g, '_')}" style="display:${isTaskExpanded ? 'block' : 'none'};padding:8px 12px;">
+                <div class="log-task-body" data-task-id="${safeTaskId}" id="task-log-${safeTaskId.replace(/[^a-zA-Z0-9]/g, '_')}" style="display:${isTaskExpanded ? 'block' : 'none'};padding:8px 12px;">
                   ${taskData.movies && taskData.movies.size > 0 ? Array.from(taskData.movies.entries()).map(([movieKey, movieData]) => {
                     const movieId = String(movieKey).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                     const safeKey = String(movieKey).replace(/[^a-zA-Z0-9]/g, '_');
@@ -4487,7 +4764,7 @@
                     offset = newLines.length;
                   }
                   
-                  if (logResp.status === 'SUCCEEDED' || logResp.status === 'FAILED') {
+                  if (logResp.status === 'SUCCEEDED' || logResp.status === 'FAILED' || logResp.status === 'SKIPPED') {
                     clearInterval(pollInterval);
                     logsContainer.textContent += `\n任务${logResp.status === 'SUCCEEDED' ? '完成' : '失败'}。`;
                   }
@@ -4618,7 +4895,20 @@
           opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
         }
         const res = await fetch(url, opts);
-        if (!res.ok) throw res;
+        if (!res.ok) {
+          // 尝试解析错误详情
+          let errorDetail = '请求失败';
+          try {
+            const errorData = await res.json();
+            errorDetail = errorData.detail || res.statusText || '请求失败';
+          } catch (e) {
+            errorDetail = res.statusText || '请求失败';
+          }
+          const error = new Error(errorDetail);
+          error.status = res.status;
+          error.detail = errorDetail;
+          throw error;
+        }
         return res.json();
       }
 
@@ -4738,6 +5028,81 @@
             };
           }
           proxyfreeModal.style.display = 'flex';
+        });
+      }
+
+      // 生成必需字段下拉菜单
+      function generateRequiredFieldsDropdown(container, selectedFields = []) {
+        container.innerHTML = '';
+        Object.entries(requiredFieldsMap).forEach(([field, label]) => {
+          const item = document.createElement('div');
+          item.className = 'dropdown-item';
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = field;
+          checkbox.checked = selectedFields.includes(field);
+
+          const text = document.createTextNode(label);
+
+          item.appendChild(checkbox);
+          item.appendChild(text);
+          container.appendChild(item);
+        });
+      }
+
+      // 获取选中的必需字段
+      function getSelectedRequiredFields(container) {
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+      }
+
+      // 更新必需字段输入框的显示文本
+      function updateRequiredFieldsInput(input, dropdown, selectedFields = []) {
+        const selectedLabels = selectedFields.map(field => requiredFieldsMap[field]).filter(Boolean);
+        if (selectedLabels.length === 0) {
+          input.value = '';
+          input.placeholder = '点击选择必需字段';
+        } else if (selectedLabels.length <= 2) {
+          input.value = selectedLabels.join(', ');
+        } else {
+          input.value = `${selectedLabels[0]}, ${selectedLabels[1]} 等${selectedLabels.length}项`;
+        }
+      }
+
+      if (rulesNetworkConnectivityTest) {
+        rulesNetworkConnectivityTest.addEventListener('click', async function () {
+          try {
+            rulesNetworkConnectivityTest.disabled = true;
+            rulesNetworkConnectivityTest.textContent = '测试中...';
+
+            const response = await fetch('/api/network/connectivity-test', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+              }
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            showModal('连通性测试结果', generateConnectivityTestResult(result), [{
+              text: '确定',
+              type: 'primary'
+            }]);
+
+          } catch (error) {
+            showModal('测试失败', `连通性测试失败: ${error.message}`, [{
+              text: '确定',
+              type: 'primary'
+            }]);
+          } finally {
+            rulesNetworkConnectivityTest.disabled = false;
+            rulesNetworkConnectivityTest.textContent = '测试站点连通性';
+          }
         });
       }
 
@@ -4926,19 +5291,18 @@
               enabled: rulesCookieCloudEnabled.checked,
               server_url: rulesCookieCloudServerUrl ? rulesCookieCloudServerUrl.value.trim() || null : null,
               uuid: rulesCookieCloudUuid ? rulesCookieCloudUuid.value.trim() || null : null,
-              password: rulesCookieCloudPassword ? rulesCookieCloudPassword.value.trim() || null : null
+              password: rulesCookieCloudPassword ? rulesCookieCloudPassword.value.trim() || null : null,
+              sync_cron: rulesCookieCloudSyncCron ? rulesCookieCloudSyncCron.value.trim() || null : null,
+              sync_interval: rulesCookieCloudSyncInterval ? parseInt(rulesCookieCloudSyncInterval.value) || 3600 : 3600
             };
           }
 
           // crawler
-          if (rulesCrawlerRequiredKeys) {
-            const v = rulesCrawlerRequiredKeys.value.trim();
-            if (v !== '') {
-              const keys = v.split(',').map(s => s.trim()).filter(Boolean);
-              if (keys.length > 0) {
-                payload.crawler = payload.crawler || {};
-                payload.crawler.required_keys = keys;
-              }
+          if (globalRequiredKeysDropdown) {
+            const selectedFields = getSelectedRequiredFields(globalRequiredKeysDropdown);
+            if (selectedFields.length > 0) {
+              payload.crawler = payload.crawler || {};
+              payload.crawler.required_keys = selectedFields;
             }
           }
           if (rulesCrawlerHardworking) {
@@ -4995,6 +5359,10 @@
           if (rulesSummarizerMoveFiles) {
             payload.summarizer = payload.summarizer || {};
             payload.summarizer.move_files = !!rulesSummarizerMoveFiles.checked;
+          }
+          if (rulesSummarizerDuplicateHandling) {
+            payload.summarizer = payload.summarizer || {};
+            payload.summarizer.duplicate_handling = rulesSummarizerDuplicateHandling.value;
           }
           if (rulesPathOutput) {
             const v = rulesPathOutput.value.trim();
@@ -5227,7 +5595,9 @@
                 enabled: !!(rulesCookieCloudEnabled && rulesCookieCloudEnabled.checked),
                 server_url: rulesCookieCloudServerUrl ? rulesCookieCloudServerUrl.value.trim() || null : null,
                 uuid: rulesCookieCloudUuid ? rulesCookieCloudUuid.value.trim() || null : null,
-                password: rulesCookieCloudPassword ? rulesCookieCloudPassword.value.trim() || null : null
+                password: rulesCookieCloudPassword ? rulesCookieCloudPassword.value.trim() || null : null,
+                sync_cron: rulesCookieCloudSyncCron ? rulesCookieCloudSyncCron.value.trim() || null : null,
+                sync_interval: rulesCookieCloudSyncInterval ? parseInt(rulesCookieCloudSyncInterval.value) || 3600 : 3600
               }
             }
           };
@@ -5256,6 +5626,105 @@
               cookiecloudStatus.textContent = '保存失败，请稍后重试。';
             }
           }
+        });
+      }
+
+      // FlareSolverr保存配置
+      if (flaresolverrSaveBtn) {
+        flaresolverrSaveBtn.addEventListener('click', async function () {
+          if (!flaresolverrStatus) return;
+          flaresolverrStatus.style.color = '#9ca3af';
+          flaresolverrStatus.textContent = '正在保存配置...';
+          const payload = {
+            network: {
+              flaresolverr: {
+                enabled: !!(rulesFlareSolverrEnabled && rulesFlareSolverrEnabled.checked),
+                server_url: rulesFlareSolverrServerUrl ? rulesFlareSolverrServerUrl.value.trim() || 'http://localhost:8191' : 'http://localhost:8191'
+              }
+            }
+          };
+          try {
+            await fetchJSON('/api/rules/global', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            flaresolverrStatus.style.color = '#bbf7d0';
+            flaresolverrStatus.textContent = '保存成功。';
+          } catch (res) {
+            flaresolverrStatus.style.color = '#fca5a5';
+            if (res && res.status === 400) {
+              let message = '保存失败：配置内容不符合 schema，请检查后重试。';
+              try {
+                const data = await res.json();
+                if (data && data.detail) {
+                  message = '保存失败：' + String(data.detail);
+                }
+              } catch (e) {}
+              flaresolverrStatus.textContent = message;
+            } else if (res && res.status === 401) {
+              window.location.href = '/login';
+            } else {
+              flaresolverrStatus.textContent = '保存失败，请稍后重试。';
+            }
+          }
+        });
+      }
+
+      if (cookiecloudSyncNowBtn) {
+        cookiecloudSyncNowBtn.addEventListener('click', async function () {
+          if (!cookiecloudStatus) return;
+
+          cookiecloudStatus.style.color = '#9ca3af';
+          cookiecloudStatus.textContent = '正在同步 cookies...';
+
+          try {
+            const response = await fetch('/api/tasks/cookiecloud/sync', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+              }
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            if (result.status === 'success') {
+              cookiecloudStatus.style.color = '#bbf7d0';
+              cookiecloudStatus.textContent = result.message || '同步成功！';
+            } else if (result.status === 'encryption_error') {
+              cookiecloudStatus.style.color = '#f59e0b';
+              cookiecloudStatus.innerHTML = `
+                <div style="max-width: 400px;">
+                  <div style="font-weight: bold; margin-bottom: 8px;">${result.message}</div>
+                  <div style="font-size: 12px; color: #666; line-height: 1.4;">
+                    <strong>解决方案：</strong><br>
+                    ${result.solutions.map(solution => `• ${solution}`).join('<br>')}
+                  </div>
+                </div>
+              `;
+            } else {
+              cookiecloudStatus.style.color = '#fca5a5';
+              cookiecloudStatus.textContent = result.message || '同步失败';
+            }
+          } catch (res) {
+            cookiecloudStatus.style.color = '#fca5a5';
+            if (res && res.status === 401) {
+              window.location.href = '/login';
+            } else {
+              cookiecloudStatus.textContent = '同步失败，请稍后重试。';
+            }
+          }
+
+          // 3秒后清除状态消息
+          setTimeout(() => {
+            if (cookiecloudStatus) {
+              cookiecloudStatus.textContent = '';
+            }
+          }, 3000);
         });
       }
 
@@ -5354,13 +5823,13 @@
         // 保存当前展开状态
         const currentExpandedTasks = new Set();
         const currentExpandedMovies = new Set();
-        document.querySelectorAll('.log-task-body').forEach(el => {
+        manualLogContainer.querySelectorAll('.log-task-body').forEach(el => {
           if (el.style.display !== 'none') {
-            const taskId = el.id.replace('task-log-', '');
-            currentExpandedTasks.add(taskId);
+            const taskId = el.getAttribute('data-task-id');
+            if (taskId) currentExpandedTasks.add(taskId);
           }
         });
-        document.querySelectorAll('.log-movie-body').forEach(el => {
+        manualLogContainer.querySelectorAll('.log-movie-body').forEach(el => {
           if (el.style.display !== 'none') {
             const match = el.id.match(/movie-log-(\d+)-(.+)/);
             if (match) {
@@ -5444,7 +5913,7 @@
                   <button class="delete-task-log-btn" data-task-id="${safeTaskId}" style="border-radius:999px;border:1px solid #374151;padding:2px 8px;background:transparent;color:#ef4444;font-size:10px;cursor:pointer;" onclick="event.stopPropagation();showDeleteBubble(this,'${safeTaskId}')">删除日志</button>
                 </div>
               </div>
-              <div class="log-task-body" id="task-log-${safeTaskId.replace(/[^a-zA-Z0-9]/g, '_')}" style="display:${isTaskExpanded ? 'block' : 'none'};padding:8px 12px;">
+              <div class="log-task-body" data-task-id="${safeTaskId}" id="task-log-${safeTaskId.replace(/[^a-zA-Z0-9]/g, '_')}" style="display:${isTaskExpanded ? 'block' : 'none'};padding:8px 12px;">
                 ${taskData.movies && taskData.movies.size > 0 ? Array.from(taskData.movies.entries()).map(([movieKey, movieData]) => {
                   const movieId = String(movieKey).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                   const safeKey = String(movieKey).replace(/[^a-zA-Z0-9]/g, '_');
@@ -5555,7 +6024,8 @@
       window.toggleTaskLog = function(taskId) {
         const safeTaskId = String(taskId).replace(/[^a-zA-Z0-9]/g, '_');
         const body = document.getElementById('task-log-' + safeTaskId);
-        const header = document.querySelector(`.log-task-group[data-task-id="${String(taskId).replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"] .log-task-header`);
+        const group = body ? body.closest('.log-task-group') : null;
+        const header = group ? group.querySelector('.log-task-header') : null;
         if (body && header) {
           const isExpanded = body.style.display !== 'none';
           body.style.display = isExpanded ? 'none' : 'block';
@@ -5569,6 +6039,39 @@
           }
         }
       };
+
+      if (manualLogClearAllBtn) {
+        manualLogClearAllBtn.addEventListener('click', async () => {
+          try {
+            const confirmed = await window.showConfirm('确定要清空所有任务日志吗？此操作不可恢复。', '清空日志');
+            if (!confirmed) return;
+            const resp = await fetch('/api/tasks/logs', { method: 'DELETE' });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data || !data.success) {
+              throw new Error((data && data.error) || '清空失败');
+            }
+            try {
+              allTaskLogs.clear();
+              expandedTasks.clear();
+              expandedMovies.clear();
+              expandedSteps.clear();
+              processedLogLines.clear();
+            } catch (e) {}
+            try {
+              if (manualLogTimer) clearInterval(manualLogTimer);
+              manualLogTimer = null;
+              manualLogTaskId = null;
+            } catch (e) {}
+            if (manualLogStatusEl) manualLogStatusEl.textContent = '尚未创建任务';
+            if (manualLogContainer) manualLogContainer.innerHTML = '<div class="placeholder">暂无日志</div>';
+            try { updateManualLogPagination(); } catch (e) {}
+            window.showAlert('日志已清空');
+          } catch (err) {
+            console.error('清空日志失败:', err);
+            window.showAlert('清空日志失败：' + (err.message || '请稍后重试'));
+          }
+        });
+      }
       
       // 切换步骤日志展开/收起
       window.toggleStepLog = function(stepKey) {
@@ -6466,6 +6969,8 @@
         // 网络设置
         const networkProxy = formElement.querySelector('#' + prefix + 'rules-network-proxy');
         if (networkProxy) networkProxy.value = network.proxy_server || '';
+        const networkProxyEnabled = formElement.querySelector('#' + prefix + 'rules-network-proxy-enabled');
+        if (networkProxyEnabled) networkProxyEnabled.checked = !!(network.proxy_server && network.proxy_server.trim() !== '');
         const networkRetry = formElement.querySelector('#' + prefix + 'rules-network-retry');
         if (networkRetry && network.retry != null) networkRetry.value = String(network.retry);
         const networkTimeout = formElement.querySelector('#' + prefix + 'rules-network-timeout');
@@ -6475,9 +6980,9 @@
         }
         
         // 爬虫设置
-        const crawlerRequiredKeys = formElement.querySelector('#' + prefix + 'rules-crawler-required-keys');
-        if (crawlerRequiredKeys && Array.isArray(crawler.required_keys)) {
-          crawlerRequiredKeys.value = crawler.required_keys.join(',');
+        const crawlerRequiredKeysContainer = formElement.querySelector('#' + prefix + 'rules-crawler-required-keys');
+        if (crawlerRequiredKeysContainer && Array.isArray(crawler.required_keys)) {
+          generateRequiredFieldsCheckboxes(crawlerRequiredKeysContainer, crawler.required_keys);
         }
         const crawlerHardworking = formElement.querySelector('#' + prefix + 'rules-crawler-hardworking');
         if (crawlerHardworking) crawlerHardworking.checked = !!crawler.hardworking;
@@ -6512,7 +7017,9 @@
         
         // 整理与路径
         const summarizerMoveFiles = formElement.querySelector('#' + prefix + 'rules-summarizer-move-files');
+        const summarizerDuplicateHandling = formElement.querySelector('#' + prefix + 'rules-summarizer-duplicate-handling');
         if (summarizerMoveFiles) summarizerMoveFiles.checked = !!summarizer.move_files;
+        if (summarizerDuplicateHandling) summarizerDuplicateHandling.value = summarizer.duplicate_handling || 'skip';
         const pathOutput = formElement.querySelector('#' + prefix + 'rules-path-output');
         if (pathOutput && pathCfg.output_folder_pattern != null) pathOutput.value = pathCfg.output_folder_pattern;
         const pathBasename = formElement.querySelector('#' + prefix + 'rules-path-basename');
@@ -6718,11 +7225,17 @@
         
         // network
         const networkProxy = formElement.querySelector('#' + prefix + 'rules-network-proxy');
-        if (networkProxy) {
+        const networkProxyEnabled = formElement.querySelector('#' + prefix + 'rules-network-proxy-enabled');
+        if (networkProxy && networkProxyEnabled) {
           const proxy = networkProxy.value.trim();
-          if (proxy !== '') {
+          const enabled = networkProxyEnabled.checked;
+          if (enabled && proxy !== '') {
             payload.network = payload.network || {};
             payload.network.proxy_server = proxy;
+          } else if (!enabled) {
+            // 禁用代理时，清除代理服务器地址
+            payload.network = payload.network || {};
+            payload.network.proxy_server = '';
           }
         }
         const networkRetry = formElement.querySelector('#' + prefix + 'rules-network-retry');
@@ -6743,15 +7256,12 @@
         }
         
         // crawler
-        const crawlerRequiredKeys = formElement.querySelector('#' + prefix + 'rules-crawler-required-keys');
-        if (crawlerRequiredKeys) {
-          const v = crawlerRequiredKeys.value.trim();
-          if (v !== '') {
-            const keys = v.split(',').map(s => s.trim()).filter(Boolean);
-            if (keys.length > 0) {
-              payload.crawler = payload.crawler || {};
-              payload.crawler.required_keys = keys;
-            }
+        const crawlerRequiredKeysContainer = formElement.querySelector('#' + prefix + 'rules-crawler-required-keys');
+        if (crawlerRequiredKeysContainer) {
+          const selectedFields = getSelectedRequiredFields(crawlerRequiredKeysContainer);
+          if (selectedFields.length > 0) {
+            payload.crawler = payload.crawler || {};
+            payload.crawler.required_keys = selectedFields;
           }
         }
         const crawlerHardworking = formElement.querySelector('#' + prefix + 'rules-crawler-hardworking');
@@ -6816,9 +7326,14 @@
         
         // summarizer.move_files & path
         const summarizerMoveFiles = formElement.querySelector('#' + prefix + 'rules-summarizer-move-files');
+        const summarizerDuplicateHandling = formElement.querySelector('#' + prefix + 'rules-summarizer-duplicate-handling');
         if (summarizerMoveFiles) {
           payload.summarizer = payload.summarizer || {};
           payload.summarizer.move_files = !!summarizerMoveFiles.checked;
+        }
+        if (summarizerDuplicateHandling) {
+          payload.summarizer = payload.summarizer || {};
+          payload.summarizer.duplicate_handling = summarizerDuplicateHandling.value;
         }
         const pathOutput = formElement.querySelector('#' + prefix + 'rules-path-output');
         if (pathOutput) {

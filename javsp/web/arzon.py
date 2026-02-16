@@ -25,6 +25,7 @@ def parse_data(movie: MovieInfo):
     full_id = movie.dvdid
     cookies = get_cookie()
     url = f'{base_url}/itemlist.html?t=&m=all&s=&q={full_id}'
+    movie.url = url
     # url = f'{base_url}/imagelist.html?q={full_id}'
     r = request_get(url, cookies, delay_raise=True)
     if r.status_code == 404:

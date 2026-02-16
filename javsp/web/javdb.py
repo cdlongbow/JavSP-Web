@@ -17,6 +17,14 @@ from javsp.cookie_manager import get_cookie_manager
 request = Request(use_scraper=True)
 request.headers['Accept-Language'] = 'zh-CN,zh;q=0.9,zh-TW;q=0.8,en-US;q=0.7,en;q=0.6,ja;q=0.5'
 
+# 检查CookieCloud是否有javdb.com的cookies，如果有则直接设置
+cookie_manager = get_cookie_manager()
+domain = 'javdb.com'
+cookies = cookie_manager.get_cookies_for_domain(domain, prefer_cookiecloud=True)
+if cookies:
+    request.cookies = cookies
+    logger.debug(f'从CookieCloud获取到javdb.com的cookies ({len(cookies)}个)')
+
 logger = logging.getLogger(__name__)
 genre_map = GenreMap('data/genre_javdb.csv')
 permanent_url = 'https://javdb.com'
@@ -45,7 +53,7 @@ def get_html_wrapper(url):
                 request = Request(use_scraper=True)
                 request.headers['Accept-Language'] = 'zh-CN,zh;q=0.9,zh-TW;q=0.8,en-US;q=0.7,en;q=0.6,ja;q=0.5'
                 request.cookies = cookies
-                logger.debug(f'未携带有效Cookies而发生重定向，尝试使用CookieCloud或浏览器Cookies')
+                logger.debug(f'检测到登录重定向，cookies可能已失效，尝试重新获取')
                 return get_html_wrapper(url)
             else:
                 # 如果CookieCloud和浏览器都没有，尝试使用旧的浏览器cookies池（向后兼容）
@@ -124,7 +132,9 @@ def parse_data(movie: MovieInfo):
         movie (MovieInfo): 要解析的影片信息，解析后的信息直接更新到此变量内
     """
     # JavDB搜索番号时会有多个搜索结果，从中查找匹配番号的那个
-    html = get_html_wrapper(f'{base_url}/search?q={movie.dvdid}')
+    search_url = f'{base_url}/search?q={movie.dvdid}'
+    movie.url = search_url  # 设置搜索URL作为初始URL
+    html = get_html_wrapper(search_url)
     ids = list(map(str.lower, html.xpath("//div[@class='video-title']/strong/text()")))
     movie_urls = html.xpath("//a[@class='box']/@href")
     match_count = len([i for i in ids if i == movie.dvdid.lower()])
@@ -133,12 +143,12 @@ def parse_data(movie: MovieInfo):
     elif match_count == 1:
         index = ids.index(movie.dvdid.lower())
         new_url = movie_urls[index]
+        movie.url = new_url  # 设置实际的影片页面URL
         try:
             html2 = get_html_wrapper(new_url)
         except (SitePermissionError, CredentialError):
             # 不开VIP不让看，过分。决定榨出能获得的信息，毕竟有时候只有这里能找到标题和封面
             box = html.xpath("//a[@class='box']")[index]
-            movie.url = new_url
             movie.title = box.get('title')
             movie.cover = box.xpath("div/img/@src")[0]
             score_str = box.xpath("div[@class='score']/span/span")[0].tail

@@ -39,6 +39,7 @@ def parse_data(movie: MovieInfo):
     url = search_video(movie)
     if not url:
         raise MovieNotFoundError(__name__, movie.dvdid)
+    movie.url = url
     html = get_html(url)
     container = html.xpath("//div[@class='container']/div/div[@class='col']")
     if len(container) > 0:

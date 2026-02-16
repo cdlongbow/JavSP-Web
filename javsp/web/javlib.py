@@ -8,10 +8,73 @@ from javsp.web.exceptions import *
 from javsp.web.proxyfree import get_proxy_free_url
 from javsp.config import Cfg, CrawlerID
 from javsp.datatype import  MovieInfo
+from javsp.cookie_manager import get_cookie_manager
 
+logger = logging.getLogger(__name__)
 
 # 初始化Request实例
 request = Request(use_scraper=True)
+
+# 检查CookieCloud是否有javlibrary.com的cookies，如果有则直接设置
+cookie_manager = get_cookie_manager()
+domain = 'javlibrary.com'
+cookies = cookie_manager.get_cookies_for_domain(domain, prefer_cookiecloud=True)
+if cookies:
+    request.cookies = cookies
+    logger.debug(f'从CookieCloud获取到javlibrary.com的cookies ({len(cookies)}个)')
+
+
+def get_html_wrapper(url):
+    """包装外发的request请求并负责转换为可xpath的html，同时处理Cookies无效等问题
+
+    Returns:
+        tuple: (resp, html) - 响应对象和解析后的HTML对象
+    """
+    global request
+    resp = request.get(url, delay_raise=True)
+
+    # 检查HTTP状态码
+    if resp.status_code != 200:
+        content = resp.text.lower()
+        if ('just a moment' in content or
+            'checking your browser' in content or
+            'cf-browser-verification' in content or
+            'cloudflare' in content):
+            from javsp.web.exceptions import SiteBlocked
+            raise SiteBlocked(f"JavLib触发Cloudflare验证 (状态码: {resp.status_code})，需要手动验证或等待: {url}")
+        elif resp.status_code == 403:
+            from javsp.web.exceptions import SiteBlocked
+            raise SiteBlocked(f"JavLib拒绝访问 (403 Forbidden)，可能需要登录或更换IP: {url}")
+        elif resp.status_code >= 500:
+            from javsp.web.exceptions import WebsiteError
+            raise WebsiteError(f"JavLib服务器错误 (状态码: {resp.status_code}): {url}")
+        else:
+            # 对于其他状态码，抛出通用异常
+            from javsp.web.exceptions import WebsiteError
+            raise WebsiteError(f"JavLib请求失败 (状态码: {resp.status_code}): {url}")
+
+    # 检查是否被重定向到登录页面（JavLibrary的登录页面URL通常包含'login'或'adult'等关键词）
+    if resp.history and any(keyword in resp.url.lower() for keyword in ['login', 'adult', 'auth']):
+        logger.debug(f'检测到登录重定向，cookies可能已失效，尝试重新获取')
+
+        # 使用Cookie管理器重新获取cookies
+        cookie_manager = get_cookie_manager()
+        domain = 'javlibrary.com'
+
+        # 优先尝试CookieCloud，然后尝试浏览器cookies
+        cookies = cookie_manager.get_cookies_for_domain(domain, prefer_cookiecloud=True)
+
+        if cookies:
+            # 更换Cookies时需要创建新的request实例，否则cloudscraper会保留它内部第一次发起网络访问时获得的Cookies
+            request = Request(use_scraper=True)
+            request.cookies = cookies
+            logger.debug(f'重新获取到cookies ({len(cookies)}个)，重试请求')
+            return get_html_wrapper(url)
+        else:
+            from javsp.web.exceptions import CredentialError
+            raise CredentialError(f'JavLibrary需要登录凭据，但CookieCloud和浏览器中都没有找到有效的cookies: {url}')
+
+    return resp, resp2html(resp)
 
 logger = logging.getLogger(__name__)
 permanent_url = 'https://www.javlibrary.com'
@@ -27,6 +90,10 @@ def init_network_cfg():
         urls.insert(1, proxy_free_url)
     # 使用代理容易触发IUAM保护，先尝试不使用代理访问
     proxy_cfgs = [{}, read_proxy()] if Cfg().network.proxy_server else [{}]
+
+    cloudflare_detected = False
+    last_cloudflare_error = None
+
     for proxies in proxy_cfgs:
         request.proxies = proxies
         for url in urls:
@@ -35,11 +102,41 @@ def init_network_cfg():
             try:
                 resp = request.get(url, delay_raise=True)
                 if resp.status_code == 200:
+                    # 检查响应内容是否包含Cloudflare验证页面
+                    content = resp.text.lower()
+                    if ('just a moment' in content or
+                        'checking your browser' in content or
+                        'cf-browser-verification' in content):
+                        cloudflare_detected = True
+                        last_cloudflare_error = f"检测到Cloudflare验证页面，代理: {proxies or '无'}"
+                        logger.debug(f"Cloudflare验证检测到: {url}")
+                        continue
                     request.timeout = Cfg().network.timeout.seconds
                     return url
+                elif resp.status_code == 403:
+                    # 检查是否为Cloudflare错误
+                    content = resp.text.lower()
+                    if 'just a moment' in content:
+                        cloudflare_detected = True
+                        last_cloudflare_error = f"Cloudflare IUAM保护 (403 Forbidden)，代理: {proxies or '无'}"
+                        logger.debug(f"Cloudflare IUAM检测到: {url}")
+                        continue
+                    else:
+                        logger.debug(f"403错误但非Cloudflare: {url}")
             except Exception as e:
                 logger.debug(f"Fail to connect to '{url}': {e}")
-    logger.warning('无法绕开JavLib的反爬机制')
+                # 检查异常信息是否包含Cloudflare相关内容
+                error_str = str(e).lower()
+                if 'cloudflare' in error_str or 'cf-' in error_str:
+                    cloudflare_detected = True
+                    last_cloudflare_error = f"Cloudflare相关错误: {str(e)}，代理: {proxies or '无'}"
+                    logger.debug(f"Cloudflare异常检测到: {url} - {e}")
+
+    if cloudflare_detected and last_cloudflare_error:
+        logger.warning(f'JavLib触发Cloudflare保护: {last_cloudflare_error}')
+    else:
+        logger.warning('无法绕开JavLib的反爬机制')
+
     request.timeout = Cfg().network.timeout.seconds
     return permanent_url
 
@@ -52,12 +149,29 @@ def parse_data(movie: MovieInfo):
         base_url = init_network_cfg()
         logger.debug(f"JavLib网络配置: {base_url}, proxy={request.proxies}")
     url = new_url = f'{base_url}/cn/vl_searchbyid.php?keyword={movie.dvdid}'
-    resp = request.get(url)
-    html = resp2html(resp)
+    movie.url = url
+    resp, html = get_html_wrapper(url)
+
+    # 检查响应内容是否包含Cloudflare验证
+    if resp.status_code == 403 or resp.status_code >= 500:
+        content = resp.text.lower()
+        if ('just a moment' in content or
+            'checking your browser' in content or
+            'cf-browser-verification' in content or
+            'cloudflare' in content):
+            from javsp.web.exceptions import SiteBlocked
+            raise SiteBlocked(f"JavLib触发Cloudflare验证 (状态码: {resp.status_code})，需要手动验证或等待: {url}")
+        elif resp.status_code == 403:
+            from javsp.web.exceptions import SiteBlocked
+            raise SiteBlocked(f"JavLib拒绝访问 (403 Forbidden)，可能需要登录或更换IP: {url}")
+        elif resp.status_code >= 500:
+            from javsp.web.exceptions import WebsiteError
+            raise WebsiteError(f"JavLib服务器错误 (状态码: {resp.status_code}): {url}")
     if resp.history:
         if urlsplit(resp.url).netloc == urlsplit(base_url).netloc:
             # 出现301重定向通常且新老地址netloc相同时，说明搜索到了影片且只有一个结果
             new_url = resp.url
+            movie.url = new_url  # 更新为实际的影片页面URL
         else:
             # 重定向到了不同的netloc时，新地址并不是影片地址。这种情况下新地址中丢失了path字段，
             # 为无效地址（应该是JavBus重定向配置有问题），需要使用新的base_url抓取数据
@@ -94,7 +208,7 @@ def parse_data(movie: MovieInfo):
             # 存在不同影片但是番号相同的情况，如MIDV-010
             raise MovieDuplicateError(__name__, movie.dvdid, match_count, pre_choose_urls)
         # 重新抓取网页
-        html = request.get_html(new_url)
+        _, html = get_html_wrapper(new_url)
     container = html.xpath("/html/body/div/div[@id='rightcolumn']")[0]
     title_tag = container.xpath("div/h3/a/text()")
     title = title_tag[0]
@@ -130,7 +244,7 @@ def parse_data(movie: MovieInfo):
 
 
 if __name__ == "__main__":
-    import pretty_errors
+    import pretty_errors  # type: ignore
     pretty_errors.configure(display_link=True)
     base_url = permanent_url
     movie = MovieInfo('IPX-177')

@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from .auth import router as auth_router
 from .tasks import router as tasks_router
 from .rules import router as rules_router
+from .network import router as network_router
 
 @lru_cache
 def get_web_version() -> str:
@@ -25,6 +26,7 @@ app.mount("/static", StaticFiles(directory=ROOT_DIR / "static"), name="static")
 app.include_router(auth_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(rules_router, prefix="/api")
+app.include_router(network_router, prefix="/api")
 
 
 @app.get("/health")
