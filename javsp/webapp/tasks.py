@@ -2052,8 +2052,10 @@ def delete_task_logs(
                         changed = True
                         continue
                     updated_history.append(item)
+
                 if changed:
                     _history[:] = updated_history
+
                     # 重写历史文件
                     try:
                         _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
