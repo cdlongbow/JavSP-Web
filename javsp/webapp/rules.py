@@ -22,6 +22,20 @@ def _deep_update(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any
     return base
 
 
+def _ensure_discriminator(base: Dict[str, Any], updates: Dict[str, Any], disc_key: str) -> None:
+    """如果 updates 中的 dict 缺少 discriminator 字段，则从 base 中继承。
+
+    这是为了处理 Pydantic discriminated union 的特殊情况：
+    当前端只发送了某个嵌套对象的局部字段（如 translator.fields）时，
+    如果不补充 discriminator，合并后的配置会因缺少 discriminator 而验证失败。
+    """
+    for key, upd in updates.items():
+        if isinstance(upd, dict) and isinstance(base.get(key), dict):
+            if disc_key not in upd and disc_key in base[key]:
+                updates[key] = dict(upd)
+                updates[key][disc_key] = base[key][disc_key]
+
+
 @router.get("/global")
 async def get_global_rules(
     user: UserInfo = Depends(get_current_user),  # noqa: ARG001
@@ -47,6 +61,8 @@ async def update_global_rules(
         except AttributeError:
             # 兼容旧版 pydantic/confz
             current = cfg.dict()  # type: ignore[no-any-return]
+        # 为 discriminated union 补充缺失的 discriminator 字段，避免验证失败
+        _ensure_discriminator(current, payload, 'name')
         merged = _deep_update(current, payload)
         try:
             validated = Cfg.model_validate(merged)  # type: ignore[attr-defined]

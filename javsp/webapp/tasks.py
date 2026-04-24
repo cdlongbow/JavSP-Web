@@ -2052,7 +2052,7 @@ def delete_task_logs(
                         changed = True
                         continue
                     updated_history.append(item)
-                if changed:
+                 if changed:
                     _history[:] = updated_history
                     # 重写历史文件
                     try:
