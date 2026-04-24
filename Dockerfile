@@ -14,7 +14,8 @@ COPY . .
 
 RUN poetry config virtualenvs.in-project true && \
     poetry lock && \
-    poetry install --no-interaction --no-ansi
+    poetry install --no-interaction --no-ansi && \
+    /app/.venv/bin/python -m compileall -q /app/javsp
 
 FROM python:3.12-slim AS runner
 

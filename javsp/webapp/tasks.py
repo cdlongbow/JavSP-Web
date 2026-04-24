@@ -2042,6 +2042,7 @@ def delete_task_logs(
             _task_logs.pop(task_id, None)
             _task_streams.pop(task_id, None)
             _tasks.pop(task_id, None)
+
         # 同步删除历史记录中的该任务
         try:
             updated_history = []
@@ -2055,8 +2056,6 @@ def delete_task_logs(
 
                 if changed:
                     _history[:] = updated_history
-
-                    # 重写历史文件
                     try:
                         _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
                         with _HISTORY_FILE.open("w", encoding="utf-8") as f:
@@ -2070,7 +2069,7 @@ def delete_task_logs(
                         log.warning("重写历史文件失败: %s", e)
         except Exception as e:  # noqa: BLE001
             log.warning("清理历史记录时出错: %s", e)
-        
+
         # 删除日志文件
         try:
             log_file = _TASK_LOGS_DIR / f"task_{task_id}.log"
