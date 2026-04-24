@@ -73,7 +73,7 @@ class Network(BaseConfig):
     timeout: Duration
     proxy_free: Dict[CrawlerID, Url]
     cookiecloud: CookieCloud
-    flaresolverr: FlareSolverr = CookieCloud()
+    flaresolverr: FlareSolverr = FlareSolverr()
 
 class CrawlerSelect(BaseConfig):
     def items(self) -> List[tuple[str, list[CrawlerID]]]:

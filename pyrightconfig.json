@@ -10,21 +10,16 @@
     "**/venv",
     "**/env"
   ],
-  "venvPath": ".",
-  "venv": ".venv",
   "pythonVersion": "3.10",
-  "pythonPlatform": "Windows",
-  "typeCheckingMode": "standard",
+  "typeCheckingMode": "basic",
   "useLibraryCodeForTypes": true,
-  "extraPaths": [
-    "."
-  ],
-  "stubPath": "./typings",
-  "autoSearchPaths": true,
-  "autoImportCompletions": true,
   "reportMissingImports": "warning",
-  "reportMissingTypeStubs": "none",
+  "reportMissingTypeStubs": "information",
   "reportImportCycles": "error",
+  "reportUnusedImport": "warning",
+  "reportUnusedClass": "warning",
+  "reportUnusedFunction": "warning",
+  "reportUnusedVariable": "warning",
   "reportDuplicateImport": "error",
   "reportConstantRedefinition": "error",
   "reportIncompatibleMethodOverride": "error",
@@ -54,8 +49,14 @@
   "reportIncompleteStub": "error",
   "reportUnsupportedDunderAll": "warning",
   "reportUnusedCoroutine": "warning",
-  "reportUnusedImport": "warning",
-  "reportUnusedClass": "warning",
-  "reportUnusedFunction": "warning",
-  "reportUnusedVariable": "warning"
+  "extraPaths": [
+    ".",
+    "./javsp"
+  ],
+  "stubPath": "./typings",
+  "pythonPlatform": "Linux",
+  "typeshedPath": "./typeshed",
+  "autoSearchPaths": true,
+  "autoImportCompletions": true,
+  "typeCheckingMode": "standard"
 }
