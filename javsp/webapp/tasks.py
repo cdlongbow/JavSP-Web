@@ -62,11 +62,6 @@ class TaskStatus(str, Enum):
     failed = "FAILED"
 
 
-class TaskTriggerSource(str, Enum):
-    manual = "manual"
-    background = "background"
-
-
 class ManualTaskCreate(BaseModel):
     input_directory: str = Field(..., description="要刮削的目录（容器内路径，例如 /video）")
     profile: Optional[str] = Field("default", description="任务规则预设名称，占位字段，当前仅支持 default")
@@ -78,8 +73,6 @@ class TaskModel(BaseModel):
     status: TaskStatus
     input_directory: str
     profile: str
-    trigger_source: TaskTriggerSource = TaskTriggerSource.manual
-    background_task_id: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
@@ -92,14 +85,6 @@ class TaskLogResponse(BaseModel):
     id: str  # 改为字符串类型
     status: TaskStatus
     lines: List[str]
-    total: int = 0
-
-
-class TaskLogDeltaResponse(BaseModel):
-    id: str
-    status: TaskStatus
-    lines: List[str]
-    offset: int = 0
 
 
 class HistoryItem(BaseModel):
@@ -362,90 +347,6 @@ def _load_task_logs() -> None:
 
 
 _load_task_logs()
-
-
-def _append_task_stream(task_id: str, text: str) -> None:
-    """Append raw task log text to memory and disk incrementally."""
-    if not text:
-        return
-    with _task_lock:
-        cur_stream = _task_streams.get(task_id, "")
-        _task_streams[task_id] = cur_stream + text
-    try:
-        _TASK_LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        log_file = _TASK_LOGS_DIR / f"task_{task_id}.log"
-        with log_file.open("a", encoding="utf-8") as f:
-            f.write(text)
-    except OSError:
-        pass
-
-
-def _ensure_task_lines_loaded(task_id: str) -> List[str]:
-    with _task_lock:
-        lines = _task_logs.get(task_id)
-        if lines is not None:
-            return list(lines)
-
-    cleaned_lines: List[str] = []
-    try:
-        log_file = _TASK_LOGS_DIR / f"task_{task_id}.log"
-        if log_file.exists():
-            stream = log_file.read_text(encoding="utf-8")
-            for line in stream.splitlines():
-                cleaned = _clean_log_line(line)
-                if cleaned:
-                    cleaned_lines.append(cleaned)
-            with _task_lock:
-                _task_logs[task_id] = cleaned_lines
-                _task_streams.setdefault(task_id, stream)
-    except OSError:
-        return []
-    return list(cleaned_lines)
-
-
-def _parse_task_log_metadata(task_id: str, raw_log_content: str) -> Dict[str, Any]:
-    status = TaskStatus.succeeded
-    input_directory = ""
-    trigger_source = TaskTriggerSource.manual
-    background_task_id = None
-    log_content = _clean_log_line(raw_log_content)
-
-    fail_marker = f"手动刮削任务 #{task_id} 失败"
-    success_marker = f"手动刮削任务 #{task_id} 完成"
-    queue_marker = f"任务 #{task_id} 已加入队列"
-    if fail_marker in log_content or "[TASK_RESULT] FAILED" in raw_log_content:
-        status = TaskStatus.failed
-    elif success_marker in log_content or "[TASK_RESULT] SUCCEEDED" in raw_log_content:
-        status = TaskStatus.succeeded
-    elif queue_marker in log_content:
-        status = TaskStatus.pending if task_id in _pending_queue else TaskStatus.failed
-
-    source_match = re.search(r"^\[TASK_SOURCE\]\s+(manual|background)(?:\s+([^\r\n]+))?", raw_log_content, re.MULTILINE)
-    if source_match:
-        trigger_source = TaskTriggerSource(source_match.group(1))
-        if trigger_source == TaskTriggerSource.background:
-            background_task_id = (source_match.group(2) or "").strip() or None
-
-    m = re.search(r"任务 #.*? 已启动，目录[：:]\s*(.+)", log_content)
-    if m:
-        input_directory = m.group(1).strip()
-    if not input_directory and queue_marker in log_content and "已启动" not in log_content:
-        try:
-            parts = task_id.split("_")
-            if parts:
-                path_encoded = parts[0].replace("_", "/").replace("-", "+")
-                while len(path_encoded) % 4 != 0:
-                    path_encoded += "="
-                input_directory = base64.urlsafe_b64decode(path_encoded).decode("utf-8")
-        except Exception:
-            pass
-
-    return {
-        "status": status,
-        "input_directory": input_directory,
-        "trigger_source": trigger_source,
-        "background_task_id": background_task_id,
-    }
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -989,7 +890,15 @@ def _run_manual_task(task_id: str, directory: str) -> None:
                     # ② 将过滤后的内容写入流，并实时持久化到文件
                     if filtered_chunks:
                         filtered_text = ''.join(filtered_chunks)
-                        _append_task_stream(task_id, filtered_text)
+                        with _task_lock:
+                            cur_stream = _task_streams.get(task_id, "")
+                            _task_streams[task_id] = cur_stream + filtered_text
+                            # 实时持久化任务日志到文件
+                            try:
+                                log_file = _TASK_LOGS_DIR / f"task_{task_id}.log"
+                                log_file.write_text(cur_stream + filtered_text, encoding="utf-8")
+                            except OSError:
+                                pass  # 日志持久化失败不影响任务本身
 
                 # 子进程已结束且没有更多输出时退出循环
                 if proc.poll() is not None:
@@ -1058,9 +967,13 @@ def _run_manual_task(task_id: str, directory: str) -> None:
             # 持久化任务日志到文件，并写入标准化结束标记，便于容器重启后准确恢复任务状态
             try:
                 result_marker = "[TASK_RESULT] SUCCEEDED" if task.status == TaskStatus.succeeded else "[TASK_RESULT] FAILED"
+                # 追加到内存日志与流缓存
                 buf = _task_logs.setdefault(task_id, [])
                 buf.append(result_marker)
-                _append_task_stream(task_id, result_marker + "\n")
+                stream = _task_streams.get(task_id, "") + result_marker + "\n"
+                _task_streams[task_id] = stream
+                log_file = _TASK_LOGS_DIR / f"task_{task_id}.log"
+                log_file.write_text(stream, encoding="utf-8")
             except OSError:
                 pass  # 日志持久化失败不影响任务本身
 
@@ -1379,7 +1292,6 @@ def create_manual_task(
         status=TaskStatus.pending,
         input_directory=directory,
         profile=payload.profile or "default",
-        trigger_source=TaskTriggerSource.manual,
         created_at=datetime.now(timezone.utc),
         config_path=str(task_cfg_path),
     )
@@ -1390,12 +1302,10 @@ def create_manual_task(
         # 入队并记录日志
         _pending_queue.append(task_id)
         buf = _task_logs.setdefault(task_id, [])
-        source_line = "[TASK_SOURCE] manual"
-        buf.append(source_line)
         line = f"[队列] 任务 #{format_task_id_display(task_id)} 已加入队列，等待执行"
         buf.append(line)
-    _append_task_stream(task_id, source_line + "\n")
-    _append_task_stream(task_id, line + "\n")
+        stream0 = _task_streams.get(task_id, "")
+        _task_streams[task_id] = stream0 + line + "\n"
 
     _start_worker()
 
@@ -1601,32 +1511,14 @@ def run_background_task_now(
                             files.extend(m.files)
                     files = sorted(list(set(files)))
                     for f in files:
-                        _enqueue_manual_task(
-                            f,
-                            profile,
-                            retry,
-                            trigger_source=TaskTriggerSource.background,
-                            background_task_id=task_id,
-                        )
+                        _enqueue_manual_task(f, profile, retry)
                 except Exception:
                     # Fallback: enqueue the directory as a single task if scanning fails
                     log = logging.getLogger(__name__)
                     log.exception("扫描目录失败，回退为目录任务：%s", d)
-                    _enqueue_manual_task(
-                        d,
-                        profile,
-                        retry,
-                        trigger_source=TaskTriggerSource.background,
-                        background_task_id=task_id,
-                    )
+                    _enqueue_manual_task(d, profile, retry)
             else:
-                _enqueue_manual_task(
-                    d,
-                    profile,
-                    retry,
-                    trigger_source=TaskTriggerSource.background,
-                    background_task_id=task_id,
-                )
+                _enqueue_manual_task(d, profile, retry)
         except Exception as e:
             log = logging.getLogger(__name__)
             log.exception("立即执行后台任务失败: %s", d)
@@ -1771,31 +1663,13 @@ def _bg_scheduler_loop():
                                                 files.extend(m.files)
                                         files = sorted(list(set(files)))
                                         for f in files:
-                                            _enqueue_manual_task(
-                                                f,
-                                                profile,
-                                                retry,
-                                                trigger_source=TaskTriggerSource.background,
-                                                background_task_id=tid,
-                                            )
+                                            _enqueue_manual_task(f, profile, retry)
                                     except Exception:
                                         log = logging.getLogger(__name__)
                                         log.exception("扫描目录失败，回退为目录任务：%s", d)
-                                        _enqueue_manual_task(
-                                            d,
-                                            profile,
-                                            retry,
-                                            trigger_source=TaskTriggerSource.background,
-                                            background_task_id=tid,
-                                        )
+                                        _enqueue_manual_task(d, profile, retry)
                                 else:
-                                    _enqueue_manual_task(
-                                        d,
-                                        profile,
-                                        retry,
-                                        trigger_source=TaskTriggerSource.background,
-                                        background_task_id=tid,
-                                    )
+                                    _enqueue_manual_task(d, profile, retry)
                             except Exception:
                                 log = logging.getLogger(__name__)
                                 log.exception("创建后台刮削子任务失败: %s", d)
@@ -1963,7 +1837,6 @@ def get_task_logs(
         limit = 100
     if limit > 2000:
         limit = 2000
-    total = 0
     with _task_lock:
         task = _tasks.get(task_id)
         if not task:
@@ -1992,7 +1865,6 @@ def get_task_logs(
         
         if len(lines) > limit:
             lines = lines[-limit:]
-        total = len(_task_logs.get(task_id, []))
 
         # 优先使用标准化的结束标记判断任务最终状态（避免依赖自然语言关键词导致误判）
         status_value = task.status
@@ -2032,28 +1904,7 @@ def get_task_logs(
                         task.finished_at = datetime.now(timezone.utc)
                     _tasks[task_id] = task
 
-    return TaskLogResponse(id=task_id, status=status_value, lines=lines, total=total)
-
-
-@router.get("/{task_id}/logsdelta", response_model=TaskLogDeltaResponse)
-def get_task_logs_delta(
-    task_id: str,
-    offset: int = 0,
-    user: UserInfo = Depends(get_current_user),  # noqa: ARG001
-) -> TaskLogDeltaResponse:
-    with _task_lock:
-        task = _tasks.get(task_id)
-        if not task:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        lines = list(_task_logs.get(task_id, []))
-        if not lines:
-            lines = _ensure_task_lines_loaded(task_id)
-        status_value = task.status
-
-    total = len(lines)
-    if offset < 0 or offset > total:
-        offset = 0
-    return TaskLogDeltaResponse(id=task_id, status=status_value, lines=lines[offset:], offset=total)
+    return TaskLogResponse(id=task_id, status=status_value, lines=lines)
 
 
 @router.get("/{task_id}/logstream")
@@ -2122,13 +1973,8 @@ def list_tasks(user: UserInfo = Depends(get_current_user)) -> List[TaskModel]:  
                         # 尝试从日志中推断状态和输入目录
                         status = TaskStatus.succeeded
                         input_directory = ""
-                        trigger_source = TaskTriggerSource.manual
-                        background_task_id = None
                         try:
                             raw_log_content = log_file.read_text(encoding="utf-8")
-                            source_meta = _parse_task_log_metadata(task_id, raw_log_content)
-                            trigger_source = source_meta["trigger_source"]
-                            background_task_id = source_meta["background_task_id"]
                             log_content = _clean_log_line(raw_log_content)
                             fail_marker = f"手动刮削任务 #{task_id} 失败"
                             success_marker = f"手动刮削任务 #{task_id} 完成"
@@ -2172,8 +2018,6 @@ def list_tasks(user: UserInfo = Depends(get_current_user)) -> List[TaskModel]:  
                             status=status,
                             input_directory=input_directory,
                             profile="default",
-                            trigger_source=trigger_source,
-                            background_task_id=background_task_id,
                             created_at=created_at,
                         )
                         tasks.append(task)
@@ -2414,13 +2258,7 @@ def scan_folder(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"扫描失败: {str(e)}")
 
 
-def _enqueue_manual_task(
-    directory: str,
-    profile: str = "default",
-    retry_count: int = 0,
-    trigger_source: TaskTriggerSource = TaskTriggerSource.manual,
-    background_task_id: Optional[str] = None,
-) -> str:
+def _enqueue_manual_task(directory: str, profile: str = "default", retry_count: int = 0) -> str:
     """内部使用：为指定目录创建一个手动任务并入队，返回 task_id"""
     # 重use create_manual_task logic but without auth and request model
     directory = str(directory)
@@ -2495,8 +2333,6 @@ def _enqueue_manual_task(
         status=TaskStatus.pending,
         input_directory=directory,
         profile=profile or "default",
-        trigger_source=trigger_source,
-        background_task_id=background_task_id,
         created_at=datetime.now(timezone.utc),
         config_path=str(task_cfg_path),
     )
@@ -2506,14 +2342,10 @@ def _enqueue_manual_task(
         _task_streams.setdefault(task_id, "")
         _pending_queue.append(task_id)
         buf = _task_logs.setdefault(task_id, [])
-        source_line = f"[TASK_SOURCE] {trigger_source.value}"
-        if background_task_id:
-            source_line += f" {background_task_id}"
-        buf.append(source_line)
         line = f"[队列] 任务 #{format_task_id_display(task_id)} 已加入队列，等待执行"
         buf.append(line)
-    _append_task_stream(task_id, source_line + "\n")
-    _append_task_stream(task_id, line + "\n")
+        stream0 = _task_streams.get(task_id, "")
+        _task_streams[task_id] = stream0 + line + "\n"
 
     _start_worker()
     return task_id
