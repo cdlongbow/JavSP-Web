@@ -6254,7 +6254,8 @@
             movies: new Map(),
             profile: task.profile || 'default',
             source: task.trigger_source || 'manual',
-            logLineOffset: 0
+            logLineOffset: 0,
+            loaded: false
           };
           current.inputPath = task.input_directory || current.inputPath || '';
           current.status = task.status || current.status || 'UNKNOWN';
@@ -6286,6 +6287,20 @@
             expandedTasks.delete(String(taskId));
           } else {
             expandedTasks.add(String(taskId));
+            try {
+              const taskData = allTaskLogs.get(String(taskId));
+              const hasLoadedContent = !!(taskData && taskData.movies && taskData.movies.size > 0);
+              const taskStatus = (taskData && taskData.status) || 'UNKNOWN';
+              if (!hasLoadedContent) {
+                if (taskStatus === 'RUNNING' || taskStatus === 'PENDING') {
+                  startManualLogStreaming(String(taskId), true, false);
+                } else {
+                  startManualLogStreaming(String(taskId), true, true, 1000);
+                }
+              }
+            } catch (e) {
+              console.warn('lazy load task log failed:', e, taskId);
+            }
           }
         }
       };
@@ -6781,6 +6796,9 @@
             const taskData = allTaskLogs.get(taskId);
             if (taskData) {
               taskData.status = status;
+              taskData.loaded = true;
+              taskData.inputPath = taskData.inputPath || getTaskDisplayPath(taskId, taskData);
+              allTaskLogs.set(taskId, taskData);
             }
             renderCollapsibleLogs();
             
@@ -7947,7 +7965,8 @@
                   status: task.status || 'UNKNOWN',
                   profile: task.profile || 'default',
                   source: task.trigger_source || 'manual',
-                  logLineOffset: 0
+                  logLineOffset: 0,
+                  loaded: false
                 });
                 // 自动恢复该任务的日志流，保留之前的内容
                 startManualLogStreaming(task.id, true);
@@ -7968,10 +7987,9 @@
                   status: task.status || 'UNKNOWN',
                   profile: task.profile || 'default',
                   source: task.trigger_source || 'manual',
-                  logLineOffset: 0
+                  logLineOffset: 0,
+                  loaded: false
                 });
-                // 触发一次性日志加载以填充数据结构（使用更大日志窗口避免分类缺失）
-                await startManualLogStreaming(task.id, true, true);
               }
             }
           }
